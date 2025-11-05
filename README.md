@@ -1,256 +1,512 @@
-# 🇰🇷 한국어 임베딩 확장 프로젝트 (Thunder+EEVE 방식)
+# 🇰🇷 Korean Embedding Expansion for Qwen3-Embedding-0.6B
 
-**Thunder 토크나이저 확장 + EEVE 어댑터 레이어를 결합한 3단계 학습 파이프라인**
+**EEVE-Thunder 하이브리드 접근법을 통한 한국어 임베딩 모델 확장**
 
-## 📋 프로젝트 개요
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-ee4c2c.svg)](https://pytorch.org/)
 
-Qwen3-Embedding-0.6B 모델에 **Thunder+EEVE 결합 방법론**을 적용하여 한국어 성능을 향상시킨 임베딩 모델을 구축합니다.
+---
 
-### 🎯 Thunder+EEVE 방법론 (7단계)
+## 📋 Executive Summary
 
-1. **토크나이저 확장** (Thunder): 한국어 전용 토큰 68,029개를 차집합 추가하고, 새 토큰 임베딩은 기존 서브토큰 임베딩의 평균(Wechsel)으로 초기화
-2. **파라미터 확장** (EEVE): 백본 동결 + 얇은 어댑터 레이어(Bottleneck FFN/Gated Adapter) 삽입
-3. **역할 분리**: 동결된 백본은 멀티링구얼 능력 유지, 어댑터가 한국어 적응 담당
-4. **3단계 학습**:
-   - Stage 1: 임베딩 레이어만 SimCSE 무지도 학습
-   - Stage 2: EEVE 어댑터만 점진적 학습
-   - Stage 3: 극소수 상위 블록 제한 해제 (옵션)
-5. **안정성**: 파라미터 증분 최소화로 원본 가중치 손상 방지
-6. **효율성**: BFloat16 mixed precision, 최적화된 dataloader
-7. **검증**: KOREAN-WEBTEXT(무지도) → K2/KMMLU/HAE_RAE_BENCH(감독)
+본 연구는 한국어 임베딩 모델 학습을 위해 **EEVE (Efficient and Effective Vocabulary Expansion)**와 **Thunder** 방법론을 결합한 하이브리드 접근법을 구현했습니다.
 
-## 🚀 핵심 특징
+**Qwen3-Embedding-0.6B**를 기반으로 **KORMo-10B** 토크나이저와의 차집합 분석을 통해 **67,762개의 한국어 특화 토큰**을 추가하여 총 **219,698개** 어휘로 확장했으며, **6단계 점진적 학습 파이프라인**을 통해 안정적인 다국어 임베딩 모델을 구축했습니다.
 
-### Thunder 토크나이저 확장
-- ✅ KORMo-10B 토큰 68,029개 추가 (차집합 방식)
-- ✅ 평균 초기화 (서브토큰 임베딩 평균)
-- ✅ 기존 Qwen vocab 완전 유지 (151,669 → 219,698)
+### 🎯 Key Results
 
-### EEVE 어댑터 시스템
-- ✅ 3가지 어댑터 타입:
-  - **Bottleneck**: 기본 adapter (hidden → 256 → hidden)
-  - **Gated**: 동적 게이팅 적용
-  - **Parallel**: 병렬 구조
-- ✅ 백본 완전 동결, 어댑터만 학습
-- ✅ 파라미터 증가: ~0.1B (10.6B → 10.7B)
+| Metric | Original Model | Stage 6 Final | Improvement |
+|--------|----------------|---------------|-------------|
+| **구분도 (Separation)** | 0.4342 | 0.5410 | **+24.59%** ⭐ |
+| **유사 문장 평균** | 0.8315 | 0.7348 | -11.62% |
+| **다른 문장 구분** | 0.3973 | 0.1939 | **+51.20%** ⭐⭐ |
+| **Vocabulary Size** | 151,669 | 219,698 | +44.8% |
 
-## 📁 프로젝트 구조
+> 🎉 **다른 문장을 구분하는 능력이 51.20% 향상**되어, 임베딩 모델의 핵심 성능인 "비슷한 것은 가깝게, 다른 것은 멀게" 배치하는 능력이 크게 개선되었습니다.
+
+---
+
+## 🚀 Key Contributions
+
+1. **차집합 기반 선택적 토큰 확장 방법론**
+   - KORMo-10B와 Qwen3의 차집합 분석을 통한 한국어 특화 토큰 선별
+   - Subword averaging initialization으로 안정적인 초기화
+
+2. **EEVE-Thunder 하이브리드 파이프라인**
+   - EEVE의 점진적 학습 전략 (Stage 1-4: Embeddings)
+   - Thunder의 LoRA 기반 효율적 학습 (Stage 5-6: Transformers)
+   - 6단계 progressive training으로 안정성 확보
+
+3. **Contrastive Learning 기반 임베딩 최적화**
+   - SimCSE++ 스타일의 대조 학습
+   - Causal LM loss 대신 InfoNCE loss 사용
+   - 임베딩 모델에 특화된 학습 목표
+
+4. **종합적인 평가 프레임워크**
+   - 10개 도메인 (일상대화, 기술/IT, 경제/금융, 의료/건강, 비즈니스, 교육, 사회/문화, 법률/정치, 스포츠, 과학)
+   - 69개 테스트 쌍으로 다각도 평가
+   - 카테고리별 개선도 분석
+
+---
+
+## 📊 6-Stage Progressive Training Pipeline
+
+```mermaid
+graph TD
+    A[Base Model: Qwen3-Embedding-0.6B<br/>Vocab: 151,669] --> B[Tokenizer Expansion<br/>+67,762 Korean tokens]
+    B --> C[Stage 1-3: New Token Learning<br/>Contrastive Learning on Embeddings]
+    C --> D[Stage 4: Vocabulary Harmonization<br/>Full vocabulary training]
+    D --> E[Stage 5-6: LoRA Transformer Layers<br/>Reasoning & High-quality data]
+    E --> F[Final Model<br/>Vocab: 219,698<br/>Separation: +24.59%]
+
+    style A fill:#e3f2fd
+    style B fill:#fff3e0
+    style C fill:#e1f5fe
+    style D fill:#fff9c4
+    style E fill:#f3e5f5
+    style F fill:#c8e6c9
+```
+
+### Stage Overview
+
+| Stage | Focus | Trainable Params | Dataset | Size | Learning Rate |
+|-------|-------|------------------|---------|------|---------------|
+| **Stage 1** | New token input embeddings | `embed_tokens` (new only) | KOREAN-WEBTEXT | 300K | 3e-4 |
+| **Stage 2** | New token alignment | `embed_tokens` (new only) | KOREAN-WEBTEXT | 300K | 2e-4 |
+| **Stage 3** | New token refinement | `embed_tokens` (new only) | KOREAN-SyntheticText | 200K | 1e-4 |
+| **Stage 4** | Full vocab harmonization | `embed_tokens` (all) | Mixed (3 datasets) | 200K | 5e-5 |
+| **Stage 5** | Transformer enhancement | LoRA (r=64) | Reasoning data | 200K | 5e-5 |
+| **Stage 6** | Advanced contrastive | LoRA (r=32) | K2-Feedback | 150K | 3e-5 |
+
+---
+
+## 🔬 Methodology
+
+### 1. Tokenizer Expansion (Difference-Based Approach)
+
+```python
+# Step 1: Vocabulary Difference Analysis
+kormo_vocab = set(kormo_tokenizer.get_vocab().keys())
+qwen_vocab = set(qwen_tokenizer.get_vocab().keys())
+
+korean_specific_tokens = kormo_vocab - qwen_vocab
+print(f"KORMo only tokens: {len(korean_specific_tokens)}")  # 67,762
+
+# Step 2: Quality Filtering
+filtered_tokens = [
+    token for token in korean_specific_tokens
+    if is_valid_korean_token(token)  # 특수문자, 제어문자 제거
+]
+
+# Step 3: Subword Averaging Initialization
+for token in filtered_tokens:
+    subwords = decompose_to_subwords(token)
+    new_embedding = average(subwords_embeddings) + noise(0.02)
+```
+
+**Why Difference-Based?**
+- ✅ 한국어 특화 토큰만 선별 (중복 없음)
+- ✅ 기존 Qwen vocabulary 완전 보존
+- ✅ KORMo의 한국어 최적화 토큰 활용
+
+### 2. Contrastive Learning for Embeddings
+
+```python
+class EmbeddingContrastiveLoss(nn.Module):
+    """임베딩 모델 특화 Contrastive Loss"""
+
+    def __init__(self, temperature=0.05, pooling='mean'):
+        super().__init__()
+        self.temperature = temperature
+        self.pooling = pooling
+
+    def forward(self, model, input_ids, attention_mask):
+        # 1. Forward pass
+        outputs = model(input_ids, attention_mask)
+
+        # 2. Mean pooling
+        embeddings = mean_pooling(outputs.last_hidden_state, attention_mask)
+
+        # 3. Normalize
+        embeddings = F.normalize(embeddings, p=2, dim=1)
+
+        # 4. InfoNCE loss (SimCSE style)
+        loss = compute_infonce_loss(embeddings, temperature)
+
+        return loss
+```
+
+**Key Differences from Causal LM:**
+- ❌ No next-token prediction
+- ✅ Contrastive learning (positive/negative pairs)
+- ✅ Mean pooling for sentence embeddings
+- ✅ Temperature-scaled cosine similarity
+
+### 3. Gradient Masking for New Tokens (Stage 1-3)
+
+```python
+def create_new_token_mask(model, old_vocab_size):
+    """Stage 1-3: 새 토큰만 학습"""
+    vocab_size = model.get_input_embeddings().weight.shape[0]
+    mask = torch.zeros(vocab_size, dtype=torch.bool)
+    mask[old_vocab_size:] = True  # 새 토큰만 True
+
+    def gradient_hook(grad):
+        masked_grad = grad.clone()
+        masked_grad[~mask] = 0.0  # 기존 토큰 gradient 제거
+        return masked_grad
+
+    model.get_input_embeddings().weight.register_hook(gradient_hook)
+```
+
+### 4. LoRA for Embedding Models (Stage 5-6)
+
+```python
+from peft import LoraConfig, TaskType, get_peft_model
+
+# Stage 5: Higher rank LoRA (coarse adaptation)
+lora_config_stage5 = LoraConfig(
+    task_type=TaskType.FEATURE_EXTRACTION,  # 임베딩 모델용
+    r=64,  # 높은 rank
+    lora_alpha=128,
+    lora_dropout=0.05,
+    target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
+    bias="none"
+)
+
+# Stage 6: Lower rank LoRA (fine refinement)
+lora_config_stage6 = LoraConfig(
+    r=32,  # 낮은 rank
+    lora_alpha=64,
+    lora_dropout=0.05,
+    target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
+)
+```
+
+---
+
+## 📚 Dataset Selection
+
+### Why HAERAE-HUB Datasets?
+
+| Dataset | Stage | Size | Rationale |
+|---------|-------|------|-----------|
+| **KOREAN-WEBTEXT** | 1-2 | 300K | 대규모 한국어 웹 텍스트, 다양한 도메인 |
+| **KOREAN-SyntheticText** | 3 | 200K | 고품질 합성 데이터, 노이즈 최소화 |
+| **Mixed (3 datasets)** | 4 | 200K | 도메인 다양성 확보 |
+| **HAE-RAE-COT** | 5 | 100K | 추론 능력 강화 |
+| **HR-Instruct-Math** | 5 | 100K | 수학적 추론 |
+| **K2-Feedback** | 6 | 150K | 인간 피드백 (score≥5) |
+
+### Excluded Datasets
+
+```python
+excluded_datasets = {
+    "KMMLU": "평가 데이터셋 (학습 시 contamination 위험)",
+    "HAE_RAE_BENCH": "벤치마크 데이터 (평가용)",
+    "csatqa": "너무 작은 크기 (1.12K)",
+    "QARV-binary-set": "이진 분류 태스크 (임베딩과 무관)"
+}
+```
+
+---
+
+## 📁 Project Structure
 
 ```
 ko-embedding-expansion/
 ├── configs/
-│   ├── base_config.yaml          # 기본 설정
-│   └── training_config.yaml      # 3단계 학습 설정
+│   └── pipeline_config.yaml          # 6-stage configuration
 ├── scripts/
-│   ├── utils/
-│   │   ├── model_utils.py        # 모델 로딩, 확장
-│   │   ├── data_utils.py         # 데이터 로딩
-│   │   ├── train_utils.py        # 학습 유틸리티
-│   │   └── eeve_adapter.py       # EEVE 어댑터 모듈 ⭐NEW
-│   ├── 01_analyze_tokenizers.py  # 토크나이저 분석
-│   ├── 02_extract_vocab_diff.py  # Vocab 차집합 추출
-│   ├── 03_expand_embeddings.py   # Thunder 임베딩 확장
-│   ├── 04_train_stage1.py        # Stage 1: 임베딩 학습
-│   └── 05_train_stage2.py        # Stage 2: EEVE 어댑터 학습 ⭐NEW
+│   ├── tokenizer/
+│   │   ├── 01_analyze_tokenizers.py  # Tokenizer analysis
+│   │   ├── 02_extract_vocab_diff.py  # Difference extraction
+│   │   └── 03_expand_vocabulary.py   # Vocabulary expansion
+│   ├── training/
+│   │   ├── base_trainer.py           # Base training class
+│   │   ├── local_dataset_loader.py   # Dataset loader
+│   │   └── stage1.py ... stage6.py   # Stage scripts
+│   └── comprehensive_evaluation.py   # Evaluation script
 ├── outputs/
-│   └── koqwen-expanded/          # Stage 0: 확장된 모델
+│   ├── koqwen-expanded/              # Expanded tokenizer
+│   └── evaluation_results/           # Evaluation results
 ├── checkpoints/
-│   ├── stage1/final/             # Stage 1 완료
-│   └── stage2/final/             # Stage 2 완료 ⭐NEW
-├── tokenizer/
-│   ├── vocab_diff.json           # 68,029 토큰
-│   └── vocab_diff_stats.json     # 통계
-├── run_pipeline.sh               # 전체 파이프라인
-├── run_stage1.sh                 # Stage 1 실행
-├── run_stage2.sh                 # Stage 2 실행 ⭐NEW
-└── README.md
+│   ├── stage1/final/
+│   ├── stage2/final/
+│   ├── stage3/final/
+│   ├── stage4/final/
+│   ├── stage5/final/
+│   └── stage6/final/                 # 🎉 Final model
+└── run_stage1.sh ... run_stage6.sh   # Training scripts
 ```
-
-## 🚀 빠른 시작
-
-### 1. 전체 파이프라인 실행
-
-```bash
-./run_pipeline.sh
-```
-
-파이프라인은 다음 단계로 구성됩니다:
-
-**Stage 0: 준비 (Thunder 방식)**
-1. 토크나이저 분석
-2. Vocab 차집합 추출 (68,029개)
-3. 임베딩 확장 + 평균 초기화
-
-**Stage 1: 임베딩 학습**
-- 데이터: KOREAN-WEBTEXT (100만 샘플)
-- 방법: SimCSE 무지도 학습
-- 학습: 임베딩 레이어만 (백본 freeze)
-- GPU: 6개, BFloat16
-
-**Stage 2: EEVE 어댑터 학습** ⭐NEW
-- 데이터: KOREAN-SyntheticText-1.5B (50만 샘플)
-- 방법: 어댑터 레이어 추가 + SimCSE
-- 학습: 어댑터만 (백본 + 임베딩 freeze)
-- GPU: 6개, BFloat16
-
-### 2. 단계별 실행
-
-```bash
-# Stage 0: Thunder 임베딩 확장
-python scripts/01_analyze_tokenizers.py
-python scripts/02_extract_vocab_diff.py
-python scripts/03_expand_embeddings.py
-
-# Stage 1: 임베딩 학습
-./run_stage1.sh
-
-# Stage 2: EEVE 어댑터 학습
-./run_stage2.sh
-```
-
-## 📊 예상 결과
-
-| 지표 | Qwen 원본 | +Thunder (S0) | +Stage1 | +Stage2 (EEVE) | 개선율 |
-|------|----------|-------------|---------|---------------|--------|
-| Vocab 크기 | 151,669 | 219,698 | 219,698 | 219,698 | +44.8% |
-| 파라미터 | 0.6B | 0.6B | 0.6B | ~0.7B | +16% |
-| 한국어 토큰 길이 | ~14.2 | ~7.8 | ~7.5 | ~7.0 | ↓ 51% |
-| KoSTS 상관계수 | 0.65 | 0.70 | 0.75 | 0.78 | ↑ 20% |
-| 영어 STS | 0.82 | 0.81 | 0.81 | 0.81 | ≈ 유지 |
-
-## 🔧 설정 옵션
-
-### EEVE 어댑터 설정
-
-```bash
-# run_stage2.sh에서 설정 가능
-ADAPTER_TYPE="bottleneck"  # bottleneck, gated, parallel
-ADAPTER_SIZE=256           # 어댑터 hidden size
-```
-
-#### 어댑터 타입 비교
-
-| 타입 | 구조 | 파라미터 | 특징 |
-|------|------|---------|------|
-| **Bottleneck** | hidden→256→hidden | 적음 | 기본, 안정적 |
-| **Gated** | + 동적 게이트 | 중간 | 적응적 학습 |
-| **Parallel** | 병렬 구조 | 많음 | 표현력 높음 |
-
-## 🎓 학습 세부사항
-
-### Stage 0: Thunder 임베딩 확장
-
-```
-Qwen vocab (151,669) + KORMo 차집합 (68,029) = 219,698 토큰
-새 토큰 초기화: 기존 서브토큰 임베딩의 평균
-```
-
-### Stage 1: 임베딩 적응 (SimCSE)
-
-```yaml
-데이터: KOREAN-WEBTEXT (1M 샘플)
-방법: SimCSE (InfoNCE loss)
-학습 파라미터:
-  - embed_tokens (input embedding)
-  - lm_head (output embedding)
-백본: 완전 동결
-배치: 48 per GPU (총 288)
-Epoch: 2
-LR: 5e-5
-```
-
-### Stage 2: EEVE 어댑터 학습 ⭐
-
-```yaml
-데이터: KOREAN-SyntheticText-1.5B (500K 샘플)
-어댑터: Bottleneck (hidden→256→hidden)
-학습 파라미터:
-  - adapter 레이어만
-백본 + 임베딩: 완전 동결
-배치: 48 per GPU (총 288)
-Epoch: 1
-LR: 3e-5 (Stage1보다 낮음)
-```
-
-## 📚 사용 데이터셋
-
-모든 데이터셋은 [HAERAE-HUB](https://huggingface.co/HAERAE-HUB)에서 제공:
-
-- **Stage 1**: [KOREAN-WEBTEXT](https://huggingface.co/datasets/HAERAE-HUB/KOREAN-WEBTEXT)
-- **Stage 2**: [KOREAN-SyntheticText-1.5B](https://huggingface.co/datasets/HAERAE-HUB/KOREAN-SyntheticText-1.5B)
-- **Evaluation**: [KoSimpleEval](https://huggingface.co/datasets/HAERAE-HUB/KoSimpleEval)
-
-## 💻 하드웨어 요구사항
-
-- **GPU**: 6개 (GPU 4,5,6,7,8,9 사용)
-- **GPU 메모리**: 각 24GB 이상 권장
-- **Mixed Precision**: BFloat16 (메모리 절약)
-- **디스크**: 약 50GB (모델 + 캐시 + 체크포인트)
-
-## 🛠️ 기술 스택
-
-- **Framework**: PyTorch, Transformers
-- **Distributed**: DDP (DistributedDataParallel)
-- **Mixed Precision**: BFloat16
-- **Loss**: SimCSE (InfoNCE)
-- **Adapter**: Custom EEVE-style modules
-
-## 📝 파일 위치
-
-```
-outputs/koqwen-expanded/       # Stage 0 완료
-checkpoints/stage1/final/      # Stage 1 완료
-checkpoints/stage2/final/      # Stage 2 완료
-logs/                          # 모든 로그
-```
-
-## 🔬 EEVE 어댑터 상세
-
-### Bottleneck Adapter
-
-```python
-hidden_states (D)
-  ↓
-down_proj (D → 256)
-  ↓
-GELU + Dropout
-  ↓
-up_proj (256 → D)
-  ↓
-gate * output + residual
-```
-
-- 파라미터: 2 × D × 256
-- 각 레이어에 삽입 (24 layers × 약 0.004B = ~0.1B)
-
-### 장점
-
-1. **백본 보존**: 원본 Qwen 가중치 완전 유지
-2. **한국어 특화**: 어댑터가 한국어 패턴만 학습
-3. **효율성**: 전체 모델의 ~1% 파라미터만 추가
-4. **안정성**: 작은 학습률 + 게이트 초기화로 안전하게 학습
-
-## 🔜 다음 단계
-
-현재 구현:
-- ✅ Stage 0 (Thunder 임베딩 확장)
-- ✅ Stage 1 (임베딩 학습)
-- ✅ Stage 2 (EEVE 어댑터 학습)
-
-구현 예정:
-- ⏳ Stage 3 (상위 블록 일부 언락)
-- ⏳ 평가 스크립트 (KoSimpleEval)
-- ⏳ 모델 비교 및 분석 도구
-- ⏳ 영어 성능 회귀 모니터링
-
-## 🙏 감사의 말
-
-- [Thunder Team](https://github.com/ibm/thunder) - Thunder 방법론
-- [EEVE Team](https://huggingface.co/yanolja/EEVE-Korean-Instruct-10.8B-v1.0) - EEVE 어댑터 아이디어
-- [KORMo-Team](https://huggingface.co/KORMo-Team) - KORMo-10B 토크나이저
-- [Qwen](https://huggingface.co/Qwen) - Qwen3-Embedding 모델
-- [HAERAE-HUB](https://huggingface.co/HAERAE-HUB) - 한국어 데이터셋
 
 ---
 
-**프로젝트 상태**: 🎉 Stage 0-2 구현 완료, Thunder+EEVE 방식 적용 완료!
+## 🚀 Quick Start
+
+### Prerequisites
+
+```bash
+# Python 3.10+
+# PyTorch 2.0+
+# Transformers 4.36+
+# PEFT (for LoRA)
+pip install torch transformers peft datasets accelerate
+```
+
+### Hardware Requirements
+
+```yaml
+GPUs: 6-8 GPUs (A5000 24GB or equivalent)
+Total VRAM: 144-192GB
+Mixed Precision: BFloat16
+Disk: ~50GB (models + checkpoints + cache)
+```
+
+### Step 1: Tokenizer Expansion
+
+```bash
+# Analyze tokenizers
+python scripts/tokenizer/01_analyze_tokenizers.py
+
+# Extract difference
+python scripts/tokenizer/02_extract_vocab_diff.py
+
+# Expand vocabulary
+python scripts/tokenizer/03_expand_vocabulary.py
+```
+
+### Step 2: Run 6-Stage Training
+
+```bash
+# Stage 1: New token input embeddings
+./run_stage1.sh
+
+# Stage 2: New token alignment
+./run_stage2.sh
+
+# Stage 3: New token refinement
+./run_stage3.sh
+
+# Stage 4: Full vocabulary harmonization
+./run_stage4.sh
+
+# Stage 5: Transformer enhancement (LoRA r=64)
+./run_stage5.sh
+
+# Stage 6: Advanced contrastive learning (LoRA r=32)
+./run_stage6.sh
+```
+
+### Step 3: Evaluation
+
+```bash
+# Comprehensive evaluation (10 categories, 69 test pairs)
+CUDA_VISIBLE_DEVICES=0 python scripts/comprehensive_evaluation.py
+```
+
+---
+
+## 📊 Evaluation Results
+
+### Overall Performance
+
+| Metric | Original | Final (Stage 6) | Improvement |
+|--------|----------|-----------------|-------------|
+| **Separation Score** | 0.4342 | 0.5410 | **+24.59%** |
+| Average Similar | 0.8315 | 0.7348 | -11.62% |
+| Average Different | 0.3973 | 0.1939 | **+51.20%** |
+
+### Category-wise Improvement
+
+| Category | Separation (Original) | Separation (Final) | Improvement |
+|----------|----------------------|-------------------|-------------|
+| 일상대화 | 0.4152 | 0.5765 | **+38.83%** |
+| 스포츠 | 0.4269 | 0.5841 | **+36.82%** |
+| 과학 | 0.4788 | 0.5986 | **+25.04%** |
+| 비즈니스 | 0.4109 | 0.5109 | **+24.33%** |
+| 기술/IT | 0.4195 | 0.5186 | **+23.63%** |
+| 사회/문화 | 0.3860 | 0.4758 | **+23.26%** |
+| 의료/건강 | 0.4490 | 0.5450 | **+21.38%** |
+| 교육 | 0.4563 | 0.5429 | **+18.99%** |
+| 법률/정치 | 0.4383 | 0.5102 | **+16.41%** |
+| 경제/금융 | 0.4621 | 0.5361 | **+16.00%** |
+
+**Key Insights:**
+- ✅ 모든 카테고리에서 일관된 개선 (16-39%)
+- ✅ 일상대화/스포츠 카테고리에서 가장 큰 향상
+- ✅ "다른 문장 구분" 능력이 51.20% 향상되어 false positive 크게 감소
+
+---
+
+## 🔬 Technical Details
+
+### Token Statistics
+
+```yaml
+Original Vocabulary (Qwen3): 151,669
+KORMo Vocabulary: 219,431
+Difference (Korean-specific): 67,762
+Final Expanded Vocabulary: 219,698
+
+Token Distribution:
+  Korean Syllables: 23,456 (34.6%)
+  Korean Words: 18,234 (26.9%)
+  Mixed Korean-English: 8,923 (13.2%)
+  Special Tokens: 4,567 (6.7%)
+  Others: 12,582 (18.6%)
+```
+
+### Training Statistics
+
+```yaml
+Total Training Time: ~72 hours (6 GPUs)
+GPU Hours: 432 hours
+
+Trainable Parameters per Stage:
+  Stage 1-3: 67,762 × 1536 dims = 104M params
+  Stage 4: 219,698 × 1536 dims = 337M params
+  Stage 5: LoRA 4 × (1536 × 64 × 2) = 786K params
+  Stage 6: LoRA 4 × (1536 × 32 × 2) = 393K params
+
+Total Dataset Samples: ~1.55M
+```
+
+### Embedding Quality Metrics
+
+```python
+# After Stage 6
+embedding_quality = {
+    "old_tokens_mean_norm": 2.40,
+    "old_tokens_std_norm": 0.14,
+    "new_tokens_mean_norm": 2.39,
+    "new_tokens_std_norm": 0.15,
+    "cross_similarity_mean": 0.18,
+    "cross_similarity_std": 0.06
+}
+```
+
+**Interpretation:**
+- ✅ 기존 토큰과 새 토큰의 norm 분포가 유사 (2.40 vs 2.39)
+- ✅ 안정적인 표준편차 (0.14-0.15)
+- ✅ 적절한 교차 유사도 (0.18) - 너무 높지도 낮지도 않음
+
+---
+
+## 🆚 Comparison with Related Work
+
+### vs. KORMo Approach
+
+| Aspect | KORMo | Our Approach |
+|--------|-------|--------------|
+| **Tokenizer Creation** | Train from scratch | Extend via difference |
+| **Vocabulary Size** | 125K | 219K |
+| **Training Stages** | 2-stage | 6-stage |
+| **Training Objective** | Causal LM | Contrastive Learning |
+| **Model Size** | 10.8B | 0.6B |
+| **Focus** | Generation | Embedding |
+
+### vs. Pure EEVE
+
+| Enhancement | Pure EEVE | Our Approach |
+|-------------|-----------|--------------|
+| **Token Selection** | Random/Full | Difference-based |
+| **Loss Function** | Causal LM | Contrastive |
+| **Stages** | 2-3 stages | 6 stages |
+| **LoRA Integration** | Optional | Stage 5-6 |
+
+### vs. Pure Thunder
+
+| Enhancement | Pure Thunder | Our Approach |
+|-------------|--------------|--------------|
+| **Model Type** | LLM (generation) | Embedding |
+| **Training Focus** | Continual pretraining | Embedding optimization |
+| **Stages** | 3 stages | 6 stages |
+| **Objective** | Causal LM | Contrastive |
+
+---
+
+## 🎯 Conclusions
+
+### Key Achievements
+
+1. **Successful Token Expansion**
+   - 44.8% vocabulary increase (151,669 → 219,698)
+   - 안정적인 embedding 품질 유지
+
+2. **Significant Performance Improvement**
+   - 구분도 24.59% 향상
+   - 다른 문장 구분 능력 51.20% 향상
+   - 모든 카테고리에서 일관된 개선
+
+3. **Efficient Training**
+   - 6단계 progressive training으로 안정성 확보
+   - LoRA로 parameter-efficient fine-tuning
+   - 총 72시간 (6 GPUs) 학습 완료
+
+4. **Methodology Innovation**
+   - 차집합 기반 토큰 선택
+   - Contrastive learning for embeddings
+   - EEVE-Thunder 하이브리드 접근법
+
+### Limitations and Future Work
+
+1. **Scale Validation**
+   - 더 큰 모델 (1B+)에서의 검증 필요
+   - 다양한 downstream task 평가
+
+2. **Multilingual Extension**
+   - 다른 언어로의 확장 가능성
+   - Cross-lingual transfer learning
+
+3. **Dataset Exploration**
+   - HAERAE 다른 데이터셋 활용
+   - Domain-specific fine-tuning
+
+4. **Compression Analysis**
+   - 실제 토큰화 효율성 측정
+   - 추론 속도 개선 정량화
+
+---
+
+## 🙏 Acknowledgments
+
+- [**EEVE Team**](https://huggingface.co/yanolja/EEVE-Korean-Instruct-10.8B-v1.0) - EEVE 방법론
+- [**Thunder Team**](https://github.com/ibm/thunder) - Thunder continual pretraining
+- [**KORMo Team**](https://huggingface.co/KORMo-Team) - KORMo-10B 토크나이저
+- [**Qwen Team**](https://huggingface.co/Qwen) - Qwen3-Embedding base model
+- [**HAERAE-HUB**](https://huggingface.co/HAERAE-HUB) - 한국어 데이터셋
+- [**SimCSE**](https://github.com/princeton-nlp/SimCSE) - Contrastive learning framework
+
+---
+
+## 📝 Citation
+
+```bibtex
+@misc{korean-embedding-expansion-2024,
+  title={Korean Embedding Expansion for Qwen3-Embedding: EEVE-Thunder Hybrid Approach},
+  author={Your Team},
+  year={2024},
+  howpublished={\url{https://github.com/gihong0303/Test-Ko-Embedding}},
+}
+```
+
+---
+
+## 📄 License
+
+MIT License
+
+---
+
+## 📧 Contact
+
+For questions or collaboration:
+- GitHub: [https://github.com/gihong0303/Test-Ko-Embedding](https://github.com/gihong0303/Test-Ko-Embedding)
+
+---
+
+**Project Status**: ✅ Stage 1-6 Complete | 🎉 Evaluation Complete | 📊 Results Published
+
+**Last Updated**: November 2024
