@@ -34,6 +34,9 @@ logs/
 # Dataset cache (로컬 데이터셋 캐시)
 /tmp/dataset_cache/
 
+# Data files (Arrow cache files - 너무 커서 제외)
+data/
+
 # IDE
 .vscode/
 .idea/
