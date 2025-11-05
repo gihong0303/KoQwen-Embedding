@@ -1,0 +1,37 @@
+# Core dependencies
+torch>=2.3.0
+transformers>=4.44.0
+accelerate>=0.34.0
+sentencepiece>=0.2.0
+tokenizers>=0.19.0
+
+# Training & Optimization
+peft>=0.12.0
+deepspeed>=0.14.0
+bitsandbytes>=0.43.0
+
+# Data processing
+datasets>=2.20.0
+pandas>=2.2.0
+numpy>=1.26.0
+scikit-learn>=1.5.0
+
+# Evaluation
+sentence-transformers>=3.0.0
+mteb>=1.14.0
+
+# Logging & Monitoring
+wandb>=0.17.0
+tensorboard>=2.17.0
+matplotlib>=3.9.0
+seaborn>=0.13.0
+
+# Utilities
+tqdm>=4.66.0
+pyyaml>=6.0.0
+jsonlines>=4.0.0
+omegaconf>=2.3.0
+
+# Optional: For Korean NLP
+konlpy>=0.6.0
+soynlp>=0.0.493

@@ -1,0 +1,12 @@
+{
+  "raw_diff": 68062,
+  "after_filter": 68029,
+  "safe_add": 68029,
+  "filter_reasons": {
+    "special_token": 3,
+    "whitespace_only": 30,
+    "control_char": 0,
+    "too_short": 0
+  },
+  "decompose_fail": 0
+}
