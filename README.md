@@ -603,7 +603,7 @@ embedding_quality = {
 ```bibtex
 @misc{korean-embedding-expansion-2024,
   title={Korean Embedding Expansion for Qwen3-Embedding: EEVE-Thunder Hybrid Approach},
-  author={Your Team},
+  author={gihong0303},
   year={2024},
   howpublished={\url{https://github.com/gihong0303/Test-Ko-Embedding}},
 }
