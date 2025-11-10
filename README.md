@@ -188,12 +188,9 @@ lora_config_stage6 = LoraConfig(
 | **K2-Feedback** | 6 | 150K | 인간 피드백 (score≥5) |
 
 ```
-
----
-
 ## 📁 Project Structure
 
-```
+```bash
 ko-embedding-expansion/
 ├── configs/
 │   └── pipeline_config.yaml          # 6-stage configuration
@@ -218,7 +215,6 @@ ko-embedding-expansion/
 │   ├── stage5/final/
 │   └── stage6/final/                 # 🎉 Final model
 └── run_stage1.sh ... run_stage6.sh   # Training scripts
-```
 
 ---
 
