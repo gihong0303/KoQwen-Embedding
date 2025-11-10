@@ -33,7 +33,6 @@
    - 임베딩 모델에 특화된 학습 목표
 
 4. **종합적인 평가 프레임워크**
-   - 10개 도메인 (일상대화, 기술/IT, 경제/금융, 의료/건강, 비즈니스, 교육, 사회/문화, 법률/정치, 스포츠, 과학)
    - 69개 테스트 쌍으로 다각도 평가
    - 카테고리별 개선도 분석
 
@@ -188,15 +187,6 @@ lora_config_stage6 = LoraConfig(
 | **HR-Instruct-Math** | 5 | 100K | 수학적 추론 |
 | **K2-Feedback** | 6 | 150K | 인간 피드백 (score≥5) |
 
-### Excluded Datasets
-
-```python
-excluded_datasets = {
-    "KMMLU": "평가 데이터셋 (학습 시 contamination 위험)",
-    "HAE_RAE_BENCH": "벤치마크 데이터 (평가용)",
-    "csatqa": "너무 작은 크기 (1.12K)",
-    "QARV-binary-set": "이진 분류 태스크 (임베딩과 무관)"
-}
 ```
 
 ---
@@ -606,5 +596,3 @@ For questions or collaboration:
 - GitHub: [https://github.com/gihong0303/Test-Ko-Embedding](https://github.com/gihong0303/Test-Ko-Embedding)
 
 ---
-
-**Project Status**: ✅ Stage 1-6 Complete | 🎉 Evaluation Complete | 📊 Results Published
