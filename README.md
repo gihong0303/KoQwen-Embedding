@@ -12,7 +12,7 @@
 
 본 연구는 한국어 임베딩 모델 학습을 위해 **EEVE (Efficient and Effective Vocabulary Expansion)**와 **Thunder** 방법론을 결합한 하이브리드 접근법을 구현했습니다.
 
-**Qwen3-Embedding-0.6B**를 기반으로 **KORMo-10B** 토크나이저와의 차집합 분석을 통해 **67,762개의 한국어 특화 토큰**을 추가하여 총 **219,698개** 어휘로 확장했으며, **6단계 점진적 학습 파이프라인**을 통해 안정적인 다국어 임베딩 모델을 구축했습니다.
+**Qwen3-Embedding-0.6B**를 기반으로 **KORMo-10B** 토크나이저와의 차집합 분석을 통해 **68,029개의 한국어 특화 토큰**을 추가하여 총 **219,698개** 어휘로 확장했으며, **6단계 점진적 학습 파이프라인**을 통해 안정적인 다국어 임베딩 모델을 구축했습니다.
 
 ---
 
@@ -43,7 +43,7 @@
 
 ```mermaid
 graph TD
-    A[Base Model: Qwen3-Embedding-0.6B<br/>Vocab: 151,669] --> B[Tokenizer Expansion<br/>+67,762 Korean tokens]
+    A[Base Model: Qwen3-Embedding-0.6B<br/>Vocab: 151,669] --> B[Tokenizer Expansion<br/>+68,029 Korean tokens]
     B --> C[Stage 1-3: New Token Learning<br/>Contrastive Learning on Embeddings]
     C --> D[Stage 4: Vocabulary Harmonization<br/>Full vocabulary training]
     D --> E[Stage 5-6: LoRA Transformer Layers<br/>Reasoning & High-quality data]
@@ -80,7 +80,7 @@ kormo_vocab = set(kormo_tokenizer.get_vocab().keys())
 qwen_vocab = set(qwen_tokenizer.get_vocab().keys())
 
 korean_specific_tokens = kormo_vocab - qwen_vocab
-print(f"KORMo only tokens: {len(korean_specific_tokens)}")  # 67,762
+print(f"KORMo only tokens: {len(korean_specific_tokens)}")  # 68,029
 
 # Step 2: Quality Filtering
 filtered_tokens = [
@@ -247,10 +247,11 @@ pip install torch transformers peft datasets accelerate
 ### Hardware Requirements
 
 ```yaml
-GPUs: 6-8 GPUs (A5000 24GB or equivalent)
-Total VRAM: 144-192GB
+GPUs: 8 GPUs (A5000 24GB or equivalent)
+Total VRAM: 192GB
 Mixed Precision: BFloat16
 Disk: ~50GB (models + checkpoints + cache)
+Training Time: ~9-10 hours (total for all 6 stages)
 ```
 
 ### Step 1: Tokenizer Expansion
@@ -453,30 +454,23 @@ CUDA_VISIBLE_DEVICES=0 python scripts/comprehensive_evaluation.py
 ```yaml
 Original Vocabulary (Qwen3): 151,669
 KORMo Vocabulary: 219,431
-Difference (Korean-specific): 67,762
+Difference (Korean-specific): 68,029
 Final Expanded Vocabulary: 219,698
-
-Token Distribution:
-  Korean Syllables: 23,456 (34.6%)
-  Korean Words: 18,234 (26.9%)
-  Mixed Korean-English: 8,923 (13.2%)
-  Special Tokens: 4,567 (6.7%)
-  Others: 12,582 (18.6%)
 ```
 
 ### Training Statistics
 
 ```yaml
-Total Training Time: ~72 hours (6 GPUs)
-GPU Hours: 432 hours
+Total Training Time: ~9-10 hours (8 GPUs, A5000 24GB)
+GPU Hours: 72-80 hours
 
 Trainable Parameters per Stage:
-  Stage 1-3: 67,762 × 1536 dims = 104M params
+  Stage 1-3: 68,029 × 1536 dims = 104M params
   Stage 4: 219,698 × 1536 dims = 337M params
   Stage 5: LoRA 4 × (1536 × 64 × 2) = 786K params
   Stage 6: LoRA 4 × (1536 × 32 × 2) = 393K params
 
-Total Dataset Samples: ~1.55M
+Total Dataset Samples: ~1.35M
 ```
 
 ### Embedding Quality Metrics
