@@ -49,3 +49,6 @@ Thumbs.db
 
 # Jupyter
 .ipynb_checkpoints/
+
+# Repomix output (코드베이스 스냅샷 - public 공개 시 불필요)
+**/repomix-output.txt
