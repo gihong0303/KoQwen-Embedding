@@ -338,6 +338,117 @@ CUDA_VISIBLE_DEVICES=0 python scripts/comprehensive_evaluation.py
 - ✅ 일상대화/스포츠 카테고리에서 가장 큰 향상
 - ✅ "다른 문장 구분" 능력이 51.20% 향상되어 false positive 크게 감소
 
+### MTEB Korean Retrieval Benchmark
+
+**Evaluation Date**: November 10, 2025
+
+6개의 한국어 검색 태스크에서 Original (Qwen3-Embedding-0.6B)과 Stage 6 모델을 비교한 결과입니다.
+
+#### Performance Comparison (NDCG@10)
+
+| Task | Original | Stage 6 | Change | Relative Change |
+|------|----------|---------|--------|----------------|
+| Ko-StrategyQA | 57.66% | 64.56% | **+6.90%** | ✅ **+12.0%** |
+| MrTidyRetrieval | 27.81% | 30.21% | **+2.40%** | ✅ **+8.6%** |
+| BelebeleRetrieval | 80.47% | 83.12% | **+2.66%** | ✅ **+3.3%** |
+| MIRACLRetrieval | 34.88% | 35.81% | **+0.93%** | ✅ **+2.7%** |
+| AutoRAGRetrieval | 74.70% | 73.10% | -1.60% | ❌ -2.1% |
+| PublicHealthQA | 74.44% | 70.34% | -4.11% | ❌ -5.5% |
+| **Average** | **58.33%** | **59.52%** | **+1.20%** | ✅ **+2.1%** |
+
+#### Detailed Metrics
+
+<details>
+<summary><b>Ko-StrategyQA (✅ Best Improvement: +12.0%)</b></summary>
+
+| Metric | Original | Stage 6 | Change |
+|--------|----------|---------|--------|
+| NDCG@10 | 57.66% | 64.56% | +6.90% |
+| MAP@10 | 50.84% | 58.38% | +7.54% |
+| Recall@10 | 67.51% | 72.59% | +5.08% |
+| Precision@10 | 12.14% | 13.19% | +1.05% |
+
+</details>
+
+<details>
+<summary><b>MrTidyRetrieval (✅ +8.6%)</b></summary>
+
+| Metric | Original | Stage 6 | Change |
+|--------|----------|---------|--------|
+| NDCG@10 | 27.81% | 30.21% | +2.40% |
+| MAP@10 | 23.01% | 24.36% | +1.35% |
+| Recall@10 | 41.13% | 46.83% | +5.70% |
+| Precision@10 | 4.56% | 5.15% | +0.59% |
+
+</details>
+
+<details>
+<summary><b>BelebeleRetrieval (✅ +3.3%)</b></summary>
+
+| Metric | Original | Stage 6 | Change |
+|--------|----------|---------|--------|
+| NDCG@10 | 80.47% | 83.12% | +2.66% |
+| MAP@10 | 77.53% | 80.42% | +2.89% |
+| Recall@10 | 89.56% | 91.56% | +2.00% |
+| Precision@10 | 8.96% | 9.16% | +0.20% |
+
+</details>
+
+<details>
+<summary><b>MIRACLRetrieval (✅ +2.7%)</b></summary>
+
+| Metric | Original | Stage 6 | Change |
+|--------|----------|---------|--------|
+| NDCG@10 | 34.88% | 35.81% | +0.93% |
+| MAP@10 | 28.33% | 29.41% | +1.08% |
+| Recall@10 | 42.83% | 43.94% | +1.11% |
+| Precision@10 | 8.64% | 8.50% | -0.14% |
+
+</details>
+
+<details>
+<summary><b>AutoRAGRetrieval (❌ -2.1%)</b></summary>
+
+| Metric | Original | Stage 6 | Change |
+|--------|----------|---------|--------|
+| NDCG@10 | 74.70% | 73.10% | -1.60% |
+| MAP@10 | 70.85% | 69.04% | -1.81% |
+| Recall@10 | 86.84% | 85.97% | -0.87% |
+| Precision@10 | 8.68% | 8.60% | -0.08% |
+
+</details>
+
+<details>
+<summary><b>PublicHealthQA (❌ -5.5%)</b></summary>
+
+| Metric | Original | Stage 6 | Change |
+|--------|----------|---------|--------|
+| NDCG@10 | 74.44% | 70.34% | -4.11% |
+| MAP@10 | 67.97% | 63.67% | -4.30% |
+| Recall@10 | 94.80% | 90.91% | -3.89% |
+| Precision@10 | 9.48% | 9.09% | -0.39% |
+
+</details>
+
+#### Key Findings
+
+**✅ Strengths:**
+- 6개 태스크 중 4개에서 성능 향상 (66.7% success rate)
+- Ko-StrategyQA에서 최대 12.0% 개선 (전략적 질의응답 능력 강화)
+- MrTidyRetrieval에서 8.6% 개선 (대규모 코퍼스 검색 능력)
+- 전체 평균 NDCG@10: 절대값 +1.20%, 상대값 +2.1% 개선
+
+**⚠️ Areas for Improvement:**
+- PublicHealthQA: -4.11% (의료 도메인 특화 쿼리에서 성능 저하)
+- AutoRAGRetrieval: -1.60% (경미한 성능 저하)
+- 도메인 특화 태스크에 대한 추가 파인튜닝 고려 필요
+
+**💡 Analysis:**
+- 일반적인 한국어 검색 태스크에서 균형잡힌 성능 향상
+- 전략적/추론 기반 쿼리 처리 능력 크게 개선
+- 의료/전문 도메인에서는 추가 최적화 여지 존재
+- 6단계 학습 파이프라인의 효과성 검증
+
 ---
 
 ## 🔬 Technical Details
