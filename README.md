@@ -1,6 +1,6 @@
 # 🇰🇷 Korean Embedding Expansion for Qwen3-Embedding-0.6B
 
-**EEVE-Thunder 하이브리드 접근법을 통한 한국어 임베딩 모델 확장**
+**점진적 어휘 확장을 통한 한국어 임베딩 모델 구축**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
@@ -10,7 +10,7 @@
 
 ## 📋 Executive Summary
 
-본 연구는 한국어 임베딩 모델 학습을 위해 **EEVE (Efficient and Effective Vocabulary Expansion)**와 **Thunder** 방법론을 결합한 하이브리드 접근법을 구현했습니다.
+본 연구는 한국어 임베딩 모델 학습을 위해 **EEVE (Efficient and Effective Vocabulary Expansion)**와 **Thunder-LLM**에서 영감을 받은 점진적 어휘 확장 방법론을 구현했습니다.
 
 **Qwen3-Embedding-0.6B**를 기반으로 **KORMo-10B** 토크나이저와의 차집합 분석을 통해 **68,029개의 한국어 특화 토큰**을 추가하여 총 **219,698개** 어휘로 확장했으며, **6단계 점진적 학습 파이프라인**을 통해 안정적인 다국어 임베딩 모델을 구축했습니다.
 
@@ -22,10 +22,10 @@
    - KORMo-10B와 Qwen3의 차집합 분석을 통한 한국어 특화 토큰 선별
    - Subword averaging initialization으로 안정적인 초기화
 
-2. **EEVE-Thunder 하이브리드 파이프라인**
-   - EEVE의 점진적 학습 전략 (Stage 1-4: Embeddings)
-   - Thunder의 LoRA 기반 효율적 학습 (Stage 5-6: Transformers)
-   - 6단계 progressive training으로 안정성 확보
+2. **6단계 점진적 학습 파이프라인**
+   - Subword averaging 초기화 (EEVE/Thunder-LLM 기법 적용)
+   - 단계별 학습: Embeddings only (Stage 1-4) → LoRA fine-tuning (Stage 5-6)
+   - Progressive training으로 안정성 확보
 
 3. **Contrastive Learning 기반 임베딩 최적화**
    - SimCSE++ 스타일의 대조 학습
@@ -87,7 +87,7 @@ filtered_tokens = [
 # Step 3: Subword Averaging Initialization
 for token in filtered_tokens:
     subwords = decompose_to_subwords(token)
-    new_embedding = average(subwords_embeddings) + noise(0.02)
+    new_embedding = average(subwords_embeddings)
 ```
 
 **Why Difference-Based?**
@@ -456,23 +456,36 @@ embedding_quality = {
 | **Model Size** | 10.8B | 0.6B |
 | **Focus** | Generation | Embedding |
 
-### vs. Pure EEVE
+### vs. EEVE (Original Paper)
 
-| Enhancement | Pure EEVE | Our Approach |
-|-------------|-----------|--------------|
-| **Token Selection** | Random/Full | Difference-based |
-| **Loss Function** | Causal LM | Contrastive |
-| **Stages** | 2-3 stages | 6 stages |
-| **LoRA Integration** | Optional | Stage 5-6 |
+| Aspect | EEVE | Our Approach |
+|--------|------|--------------|
+| **Base Model** | SOLAR-10.7B (LLM) | Qwen3-Embedding-0.6B |
+| **Model Type** | Causal LM (Generation) | Embedding Model |
+| **Loss Function** | Causal LM | Contrastive (SimCSE) |
+| **Training Stages** | 7 stages | 6 stages |
+| **Token Initialization** | Subword averaging | Subword averaging ✓ |
+| **Output Embedding** | lm_head initialization | N/A (no lm_head) |
 
-### vs. Pure Thunder
+### vs. Thunder-LLM
 
-| Enhancement | Pure Thunder | Our Approach |
-|-------------|--------------|--------------|
-| **Model Type** | LLM (generation) | Embedding |
-| **Training Focus** | Continual pretraining | Embedding optimization |
-| **Stages** | 3 stages | 6 stages |
-| **Objective** | Causal LM | Contrastive |
+| Aspect | Thunder-LLM | Our Approach |
+|--------|-------------|--------------|
+| **Base Model** | Llama 3.1 8B (LLM) | Qwen3-Embedding-0.6B |
+| **Model Type** | Causal LM (Generation) | Embedding Model |
+| **Loss Function** | Causal LM | Contrastive (SimCSE) |
+| **Training Method** | Full continual pre-training | Embeddings + LoRA |
+| **LoRA Usage** | ❌ Not used | ✅ Stage 5-6 |
+| **Training Precision** | FP8 | BF16 |
+| **Training Scale** | 100B tokens | ~259M tokens |
+| **Token Initialization** | Subword averaging | Subword averaging ✓ |
+
+### Key Differences
+
+본 프로젝트는 **임베딩 모델에 특화**된 접근법을 사용합니다:
+- **Contrastive Learning**: Causal LM 대신 SimCSE 스타일 대조 학습
+- **Parameter-Efficient**: LoRA를 활용한 효율적 학습 (Thunder-LLM은 full training)
+- **Small Scale**: 제한된 리소스에서 임베딩 모델 최적화에 집중
 
 ---
 
@@ -497,7 +510,7 @@ embedding_quality = {
 4. **Methodology Innovation**
    - 차집합 기반 토큰 선택
    - Contrastive learning for embeddings
-   - EEVE-Thunder 하이브리드 접근법
+   - Progressive training with LoRA integration
 
 ### Limitations and Future Work
 
@@ -522,7 +535,7 @@ embedding_quality = {
 ## 🙏 Acknowledgments
 
 - [**EEVE Team**](https://huggingface.co/yanolja/EEVE-Korean-Instruct-10.8B-v1.0) - EEVE 방법론
-- [**Thunder Team**](https://github.com/ibm/thunder) - Thunder continual pretraining
+- [**Thunder-LLM Team**](https://arxiv.org/abs/2506.21595) - Thunder-LLM Korean adaptation methodology
 - [**KORMo Team**](https://huggingface.co/KORMo-Team) - KORMo-10B 토크나이저
 - [**Qwen Team**](https://huggingface.co/Qwen) - Qwen3-Embedding base model
 - [**HAERAE-HUB**](https://huggingface.co/HAERAE-HUB) - 한국어 데이터셋
@@ -534,10 +547,11 @@ embedding_quality = {
 
 ```bibtex
 @misc{korean-embedding-expansion-2024,
-  title={Korean Embedding Expansion for Qwen3-Embedding: EEVE-Thunder Hybrid Approach},
+  title={Korean Embedding Expansion for Qwen3-Embedding: Progressive Vocabulary Expansion for Embedding Models},
   author={gihong0303},
   year={2024},
-  howpublished={\url{https://github.com/gihong0303/Test-Ko-Embedding}},
+  howpublished={\url{https://github.com/gihong0303/KoQwen-Embedding}},
+  note={Inspired by EEVE and Thunder-LLM methodologies}
 }
 ```
 
