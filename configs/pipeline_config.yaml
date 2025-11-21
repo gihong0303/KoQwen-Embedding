@@ -5,8 +5,7 @@
 
 project:
   name: "ko-qwen3-embedding-clsa-7stage"
-  base_model: "Qwen/Qwen2.5-0.5B"  # Using smaller model for faster bilingual dict extraction
-  embedding_model: "Qwen/Qwen3-Embedding-0.6B"  # Actual embedding model
+  base_model: "Qwen/Qwen3-Embedding-0.6B"  # Main embedding model for training
   tokenizer_path: "outputs/koqwen-expanded"
   original_vocab_size: 151669
   expanded_vocab_size: 219698
