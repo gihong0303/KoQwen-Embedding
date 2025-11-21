@@ -1,95 +1,43 @@
 # ============================================================================
 # Korean Embedding Expansion for Qwen3-Embedding-0.6B
-# ENHANCED 7-Stage Pipeline with CLSA + Token Curriculum
+# 6-Stage Pipeline (EEVE-Thunder adapted for Embedding Model)
 # ============================================================================
 
 project:
-  name: "ko-qwen3-embedding-clsa-7stage"
-  base_model: "Qwen/Qwen3-Embedding-0.6B"  # Main embedding model for training
+  name: "ko-qwen3-embedding-6stage"
+  base_model: "Qwen/Qwen3-Embedding-0.6B"
   tokenizer_path: "outputs/koqwen-expanded"
   original_vocab_size: 151669
   expanded_vocab_size: 219698
   new_tokens_count: 67762
 
 # ============================================================================
-# Stage 0: Cross-lingual Semantic Anchoring (CLSA) - NEW!
-# ============================================================================
-stage0:
-  name: "Stage 0 - Cross-lingual Semantic Anchoring (CLSA)"
-  description: "새 한국어 토큰을 영어/중국어 의미 공간에 정렬"
-
-  train_new_tokens_only: true
-  old_vocab_size: 151669
-
-  dataset:
-    bilingual_dict_path: "outputs/bilingual_dictionary.json"
-    min_anchors: 2  # Minimum number of cross-lingual anchors per token
-
-  # CLSA-specific settings
-  diversity_weight: 0.1  # Regularization to prevent token collapse
-  distance_type: "cosine"  # 'cosine' or 'euclidean'
-
-  training:
-    num_epochs: 3
-    batch_size: 128  # Large batch for diverse token pairs
-    gradient_accumulation_steps: 2
-    learning_rate: 5e-4  # Higher LR for initial alignment
-    weight_decay: 0.01
-    warmup_ratio: 0.2
-    lr_scheduler_type: "cosine"
-    max_grad_norm: 1.0
-
-  optimization:
-    mixed_precision: "bf16"
-
-  checkpoint:
-    output_dir: "checkpoints/stage0"
-    save_steps: 500
-    save_total_limit: 2
-
-  logging:
-    log_steps: 50
-
-# ============================================================================
-# Stage 1: Easy Tokens (Curriculum Learning - 30% easiest)
+# Stage 1: New Token Input Embeddings
 # ============================================================================
 stage1:
-  name: "Stage 1 - Easy Tokens Learning (Curriculum)"
-  description: "빈도 높고 단순한 토큰 학습 (Top 30% easiest)"
+  name: "Stage 1 - New Token Input Embeddings"
+  description: "새 토큰의 input embeddings 학습 (Contrastive Learning)"
 
   trainable_params:
-    - "model.embed_tokens"
+    - "model.embed_tokens"  # 새 토큰만
   freeze_params:
     - "model.layers"
 
   train_new_tokens_only: true
   old_vocab_size: 151669
 
-  # Curriculum learning settings - NEW!
-  curriculum:
-    enabled: true
-    difficulty_categories_path: "outputs/token_difficulty/token_categories.json"
-    mode: "easy"  # Focus on easy tokens
-    priority_weight: 3.0  # Oversample easy tokens by 3x
-
   contrastive:
     temperature: 0.05
     pooling: "mean"
 
-  # Enhanced dataset with KorNLI
   dataset:
-    mixed:
-      - name: "HAERAE-HUB/KOREAN-WEBTEXT"
-        source: "huggingface"
-        max_samples: 200000
-      - name: "kakaobrain/kor_nli"
-        source: "huggingface"
-        split: "train"
-        max_samples: 100000  # Use NLI data for better semantic learning
+    name: "HAERAE-HUB/KOREAN-WEBTEXT"
+    max_samples: 300000
+    streaming: false
 
   training:
     num_epochs: 2
-    batch_size: 24
+    batch_size: 20
     gradient_accumulation_steps: 3
     max_length: 192
     learning_rate: 3e-4
@@ -103,7 +51,7 @@ stage1:
     gradient_checkpointing: false
 
   checkpoint:
-    output_dir: "checkpoints/stage1_curriculum"
+    output_dir: "checkpoints/stage1"
     save_steps: 1000
     save_total_limit: 2
 
@@ -111,46 +59,34 @@ stage1:
     log_steps: 50
 
 # ============================================================================
-# Stage 2: Medium Tokens (Curriculum Learning - 40% medium)
+# Stage 2: New Token Alignment
 # ============================================================================
 stage2:
-  name: "Stage 2 - Medium Tokens Learning (Curriculum)"
-  description: "중간 난이도 토큰 학습 (Middle 40%)"
+  name: "Stage 2 - New Token Alignment"
+  description: "새 토큰 임베딩 정렬 (더 강한 Contrastive)"
 
   trainable_params:
-    - "model.embed_tokens"
+    - "model.embed_tokens"  # 새 토큰 계속 학습
   freeze_params:
     - "model.layers"
 
   train_new_tokens_only: true
   old_vocab_size: 151669
 
-  # Curriculum learning - MEDIUM tokens
-  curriculum:
-    enabled: true
-    difficulty_categories_path: "outputs/token_difficulty/token_categories.json"
-    mode: "medium"
-    priority_weight: 3.0
-
   contrastive:
     temperature: 0.05
     pooling: "mean"
 
   dataset:
-    mixed:
-      - name: "HAERAE-HUB/KOREAN-WEBTEXT"
-        source: "local"
-        local_path: "~/haerae_dataset/KOREAN-WEBTEXT"
-        max_samples: 200000
-      - name: "kakaobrain/kor_nli"
-        source: "huggingface"
-        split: "train"
-        max_samples: 100000
+    local: true
+    local_path: "~/haerae_dataset"
+    name: "KOREAN-WEBTEXT"
+    max_samples: 300000
 
   training:
     num_epochs: 1
-    batch_size: 16
-    gradient_accumulation_steps: 4
+    batch_size: 12
+    gradient_accumulation_steps: 5
     max_length: 192
     learning_rate: 2e-4
     weight_decay: 0.01
@@ -162,7 +98,7 @@ stage2:
     mixed_precision: "bf16"
 
   checkpoint:
-    output_dir: "checkpoints/stage2_curriculum"
+    output_dir: "checkpoints/stage2"
     save_steps: 1000
     save_total_limit: 2
 
@@ -170,48 +106,36 @@ stage2:
     log_steps: 50
 
 # ============================================================================
-# Stage 3: Hard Tokens (Curriculum Learning - 30% hardest)
+# Stage 3: New Token Refinement
 # ============================================================================
 stage3:
-  name: "Stage 3 - Hard Tokens Learning (Curriculum)"
-  description: "저빈도/복잡한 토큰 학습 (Bottom 30% hardest)"
+  name: "Stage 3 - New Token Refinement"
+  description: "새 토큰 세밀 조정 (High Quality Synthetic Text)"
 
   trainable_params:
-    - "model.embed_tokens"
+    - "model.embed_tokens"  # 새 토큰만
   freeze_params:
     - "model.layers"
 
   train_new_tokens_only: true
   old_vocab_size: 151669
 
-  # Curriculum learning - HARD tokens
-  curriculum:
-    enabled: true
-    difficulty_categories_path: "outputs/token_difficulty/token_categories.json"
-    mode: "hard"
-    priority_weight: 4.0  # Higher weight for rare tokens
-
   contrastive:
     temperature: 0.05
     pooling: "mean"
 
   dataset:
-    mixed:
-      - name: "HAERAE-HUB/KOREAN-SyntheticText"
-        source: "local"
-        local_path: "~/haerae_dataset/KOREAN-SyntheticText"
-        max_samples: 150000
-      - name: "kakaobrain/kor_nli"
-        source: "huggingface"
-        split: "train"
-        max_samples: 50000
+    local: true
+    local_path: "~/haerae_dataset"
+    name: "KOREAN-SyntheticText"
+    max_samples: 200000
 
   training:
     num_epochs: 1
     batch_size: 12
     gradient_accumulation_steps: 5
     max_length: 192
-    learning_rate: 1e-4  # Lower LR for hard tokens (more careful)
+    learning_rate: 1e-4
     weight_decay: 0.01
     warmup_ratio: 0.1
     lr_scheduler_type: "cosine"
@@ -221,7 +145,7 @@ stage3:
     mixed_precision: "bf16"
 
   checkpoint:
-    output_dir: "checkpoints/stage3_curriculum"
+    output_dir: "checkpoints/stage3"
     save_steps: 1000
     save_total_limit: 2
 
@@ -242,36 +166,25 @@ stage4:
 
   train_new_tokens_only: false  # 전체 학습
 
-  curriculum:
-    enabled: false  # No curriculum for stage 4
-
   contrastive:
     temperature: 0.05
     pooling: "mean"
 
   dataset:
+    local: true
+    local_path: "~/haerae_dataset"
     mixed:
-      - name: "HAERAE-HUB/KOREAN-WEBTEXT"
-        source: "local"
-        local_path: "~/haerae_dataset/KOREAN-WEBTEXT"
+      - name: "KOREAN-WEBTEXT"
         max_samples: 100000
-      - name: "HAERAE-HUB/KOREAN-SyntheticText"
-        source: "local"
-        local_path: "~/haerae_dataset/KOREAN-SyntheticText"
-        max_samples: 60000
-      - name: "HAERAE-HUB/KoSimpleEval"
-        source: "local"
-        local_path: "~/haerae_dataset/KoSimpleEval"
-        max_samples: 20000
-      - name: "kakaobrain/kor_nli"
-        source: "huggingface"
-        split: "train"
+      - name: "KOREAN-SyntheticText"
+        max_samples: 80000
+      - name: "KoSimpleEval"
         max_samples: 20000
 
   training:
     num_epochs: 1
-    batch_size: 12
-    gradient_accumulation_steps: 5
+    batch_size: 10
+    gradient_accumulation_steps: 6
     max_length: 192
     learning_rate: 5e-5
     weight_decay: 0.01
@@ -314,20 +227,18 @@ stage5:
     pooling: "mean"
 
   dataset:
+    local: true
+    local_path: "~/haerae_dataset"
     mixed:
       - name: "HAE-RAE-COT"
-        source: "local"
-        local_path: "~/haerae_dataset/HAE-RAE-COT"
         max_samples: 100000
       - name: "HR-Instruct-Math"
-        source: "local"
-        local_path: "~/haerae_dataset/HR-Instruct-Math"
         max_samples: 100000
 
   training:
     num_epochs: 1
-    batch_size: 10
-    gradient_accumulation_steps: 6
+    batch_size: 8
+    gradient_accumulation_steps: 8
     max_length: 192
     learning_rate: 5e-5
     weight_decay: 0.01
@@ -379,8 +290,8 @@ stage6:
 
   training:
     num_epochs: 2
-    batch_size: 12
-    gradient_accumulation_steps: 5
+    batch_size: 10
+    gradient_accumulation_steps: 6
     max_length: 192
     learning_rate: 3e-5
     weight_decay: 0.01
