@@ -1,15 +1,36 @@
 # ============================================================================
 # Korean Embedding Expansion for Qwen3-Embedding-0.6B
-# ENHANCED 7-Stage Pipeline with CLSA + Token Curriculum
+# HYBRID 7-Stage Pipeline: CLSA + JLCE + MCL + Contrastive
+# ============================================================================
+#
+# Stage 0: Cross-lingual Semantic Anchoring (CLSA)
+# Stage 1-3: Jamo-Level Compositional Embedding (JLCE) + Morphological Curriculum Learning (MCL)
+# Stage 4-6: Standard Contrastive Learning with LoRA
+#
 # ============================================================================
 
 project:
-  name: "ko-qwen3-embedding-clsa-7stage"
+  name: "ko-qwen3-embedding-hybrid-7stage"
   base_model: "Qwen/Qwen3-Embedding-0.6B"  # Main embedding model for training
   tokenizer_path: "outputs/koqwen-expanded"
   original_vocab_size: 151669
   expanded_vocab_size: 219698
   new_tokens_count: 67762
+
+# Global settings for Korean-specific methods
+korean_specific:
+  # Jamo-Level Compositional Embedding (JLCE)
+  jlce:
+    enabled: true
+    composition_type: "mlp"  # 'mlp', 'attention', 'weighted_sum'
+    use_position_encoding: true
+    blend_ratio: 0.5  # JLCE vs existing embedding blend
+
+  # Morphological Curriculum Learning (MCL)
+  mcl:
+    enabled: true
+    use_mecab: true  # MeCab-ko for morphological analysis
+    cache_path: "outputs/morphological_curriculum/token_categories.json"
 
 # ============================================================================
 # Stage 0: Cross-lingual Semantic Anchoring (CLSA) - NEW!
@@ -51,11 +72,11 @@ stage0:
     log_steps: 50
 
 # ============================================================================
-# Stage 1: Easy Tokens (Curriculum Learning - 30% easiest)
+# Stage 1: Easy Tokens with JLCE + MCL (30% easiest)
 # ============================================================================
 stage1:
-  name: "Stage 1 - Easy Tokens Learning (Curriculum)"
-  description: "빈도 높고 단순한 토큰 학습 (Top 30% easiest)"
+  name: "Stage 1 - Easy Tokens (JLCE + MCL)"
+  description: "단일 어근, 빈도 높은 토큰 학습 (Top 30% easiest)"
 
   trainable_params:
     - "model.embed_tokens"
@@ -65,12 +86,19 @@ stage1:
   train_new_tokens_only: true
   old_vocab_size: 151669
 
-  # Curriculum learning settings - NEW!
+  # JLCE + MCL Combined Loss Settings
+  jlce_mcl:
+    enabled: true
+    jamo_weight: 0.5      # Stage 1: 자모 임베딩 강조
+    curriculum_weight: 0.2
+    contrastive_weight: 0.3
+
+  # Morphological curriculum (stem only)
   curriculum:
     enabled: true
-    difficulty_categories_path: "outputs/token_difficulty/token_categories.json"
-    mode: "easy"  # Focus on easy tokens
-    priority_weight: 3.0  # Oversample easy tokens by 3x
+    difficulty_categories_path: "outputs/morphological_curriculum/token_categories.json"
+    mode: "easy"  # 단일 어근 (예: 집, 학교, 먹다)
+    priority_weight: 3.0
 
   contrastive:
     temperature: 0.05
@@ -81,11 +109,11 @@ stage1:
     mixed:
       - name: "HAERAE-HUB/KOREAN-WEBTEXT"
         source: "huggingface"
-        max_samples: 200000
+        max_samples: 150000
       - name: "kakaobrain/kor_nli"
         source: "huggingface"
         split: "train"
-        max_samples: 100000  # Use NLI data for better semantic learning
+        max_samples: 100000
 
   training:
     num_epochs: 2
@@ -103,7 +131,7 @@ stage1:
     gradient_checkpointing: false
 
   checkpoint:
-    output_dir: "checkpoints/stage1_curriculum"
+    output_dir: "checkpoints/stage1_jlce_mcl"
     save_steps: 1000
     save_total_limit: 2
 
@@ -111,11 +139,11 @@ stage1:
     log_steps: 50
 
 # ============================================================================
-# Stage 2: Medium Tokens (Curriculum Learning - 40% medium)
+# Stage 2: Medium Tokens with JLCE + MCL (40% medium)
 # ============================================================================
 stage2:
-  name: "Stage 2 - Medium Tokens Learning (Curriculum)"
-  description: "중간 난이도 토큰 학습 (Middle 40%)"
+  name: "Stage 2 - Medium Tokens (JLCE + MCL)"
+  description: "어근+조사 토큰 학습 (Middle 40%)"
 
   trainable_params:
     - "model.embed_tokens"
@@ -125,11 +153,18 @@ stage2:
   train_new_tokens_only: true
   old_vocab_size: 151669
 
-  # Curriculum learning - MEDIUM tokens
+  # JLCE + MCL Combined Loss Settings
+  jlce_mcl:
+    enabled: true
+    jamo_weight: 0.4      # Stage 2: 균형 잡힌 가중치
+    curriculum_weight: 0.3
+    contrastive_weight: 0.3
+
+  # Morphological curriculum (stem + affix)
   curriculum:
     enabled: true
-    difficulty_categories_path: "outputs/token_difficulty/token_categories.json"
-    mode: "medium"
+    difficulty_categories_path: "outputs/morphological_curriculum/token_categories.json"
+    mode: "medium"  # 어근+조사 (예: 집에, 학교로, 먹고)
     priority_weight: 3.0
 
   contrastive:
@@ -139,9 +174,8 @@ stage2:
   dataset:
     mixed:
       - name: "HAERAE-HUB/KOREAN-WEBTEXT"
-        source: "local"
-        local_path: "~/haerae_dataset/KOREAN-WEBTEXT"
-        max_samples: 200000
+        source: "huggingface"
+        max_samples: 150000
       - name: "kakaobrain/kor_nli"
         source: "huggingface"
         split: "train"
@@ -162,7 +196,7 @@ stage2:
     mixed_precision: "bf16"
 
   checkpoint:
-    output_dir: "checkpoints/stage2_curriculum"
+    output_dir: "checkpoints/stage2_jlce_mcl"
     save_steps: 1000
     save_total_limit: 2
 
@@ -170,11 +204,11 @@ stage2:
     log_steps: 50
 
 # ============================================================================
-# Stage 3: Hard Tokens (Curriculum Learning - 30% hardest)
+# Stage 3: Hard Tokens with JLCE + MCL (30% hardest)
 # ============================================================================
 stage3:
-  name: "Stage 3 - Hard Tokens Learning (Curriculum)"
-  description: "저빈도/복잡한 토큰 학습 (Bottom 30% hardest)"
+  name: "Stage 3 - Hard Tokens (JLCE + MCL)"
+  description: "복합 형태, 저빈도 토큰 학습 (Bottom 30% hardest)"
 
   trainable_params:
     - "model.embed_tokens"
@@ -184,11 +218,18 @@ stage3:
   train_new_tokens_only: true
   old_vocab_size: 151669
 
-  # Curriculum learning - HARD tokens
+  # JLCE + MCL Combined Loss Settings
+  jlce_mcl:
+    enabled: true
+    jamo_weight: 0.3      # Stage 3: 형태소 커리큘럼 강조
+    curriculum_weight: 0.4
+    contrastive_weight: 0.3
+
+  # Morphological curriculum (complex forms)
   curriculum:
     enabled: true
-    difficulty_categories_path: "outputs/token_difficulty/token_categories.json"
-    mode: "hard"
+    difficulty_categories_path: "outputs/morphological_curriculum/token_categories.json"
+    mode: "hard"  # 복합 구조 (예: 학교에서부터, 먹지않았다)
     priority_weight: 4.0  # Higher weight for rare tokens
 
   contrastive:
@@ -200,7 +241,7 @@ stage3:
       - name: "HAERAE-HUB/KOREAN-SyntheticText"
         source: "local"
         local_path: "~/haerae_dataset/KOREAN-SyntheticText"
-        max_samples: 150000
+        max_samples: 100000
       - name: "kakaobrain/kor_nli"
         source: "huggingface"
         split: "train"
@@ -213,15 +254,15 @@ stage3:
     max_length: 192
     learning_rate: 1e-4  # Lower LR for hard tokens (more careful)
     weight_decay: 0.01
-    warmup_ratio: 0.1
-    lr_scheduler_type: "cosine"
-    max_grad_norm: 1.0
+    warmup_ratio: 0.15
+    lr_scheduler_type: "cosine_with_restarts"
+    max_grad_norm: 0.5  # Smaller gradient clipping
 
   optimization:
     mixed_precision: "bf16"
 
   checkpoint:
-    output_dir: "checkpoints/stage3_curriculum"
+    output_dir: "checkpoints/stage3_jlce_mcl"
     save_steps: 1000
     save_total_limit: 2
 
