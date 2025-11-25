@@ -1,0 +1,333 @@
+# ============================================================================
+# Korean Embedding Expansion for Qwen3-Embedding-0.6B
+# 6-Stage Pipeline (EEVE-Thunder adapted for Embedding Model)
+# ============================================================================
+
+project:
+  name: "ko-qwen3-embedding-6stage"
+  base_model: "Qwen/Qwen3-Embedding-0.6B"
+  tokenizer_path: "outputs/koqwen-expanded"
+  original_vocab_size: 151669
+  expanded_vocab_size: 219698
+  new_tokens_count: 67762
+
+# ============================================================================
+# Stage 1: New Token Input Embeddings
+# ============================================================================
+stage1:
+  name: "Stage 1 - New Token Input Embeddings"
+  description: "새 토큰의 input embeddings 학습 (Contrastive Learning)"
+
+  trainable_params:
+    - "model.embed_tokens"  # 새 토큰만
+  freeze_params:
+    - "model.layers"
+
+  train_new_tokens_only: true
+  old_vocab_size: 151669
+
+  contrastive:
+    temperature: 0.05
+    pooling: "mean"
+
+  dataset:
+    name: "HAERAE-HUB/KOREAN-WEBTEXT"
+    max_samples: 300000
+    streaming: false
+
+  training:
+    num_epochs: 2
+    batch_size: 20
+    gradient_accumulation_steps: 3
+    max_length: 192
+    learning_rate: 3e-4
+    weight_decay: 0.01
+    warmup_ratio: 0.1
+    lr_scheduler_type: "cosine"
+    max_grad_norm: 1.0
+
+  optimization:
+    mixed_precision: "bf16"
+    gradient_checkpointing: false
+
+  checkpoint:
+    output_dir: "checkpoints/stage1"
+    save_steps: 1000
+    save_total_limit: 2
+
+  logging:
+    log_steps: 50
+
+# ============================================================================
+# Stage 2: New Token Alignment
+# ============================================================================
+stage2:
+  name: "Stage 2 - New Token Alignment"
+  description: "새 토큰 임베딩 정렬 (더 강한 Contrastive)"
+
+  trainable_params:
+    - "model.embed_tokens"  # 새 토큰 계속 학습
+  freeze_params:
+    - "model.layers"
+
+  train_new_tokens_only: true
+  old_vocab_size: 151669
+
+  contrastive:
+    temperature: 0.05
+    pooling: "mean"
+
+  dataset:
+    local: true
+    local_path: "~/haerae_dataset"
+    name: "KOREAN-WEBTEXT"
+    max_samples: 300000
+
+  training:
+    num_epochs: 1
+    batch_size: 12
+    gradient_accumulation_steps: 5
+    max_length: 192
+    learning_rate: 2e-4
+    weight_decay: 0.01
+    warmup_ratio: 0.1
+    lr_scheduler_type: "cosine"
+    max_grad_norm: 1.0
+
+  optimization:
+    mixed_precision: "bf16"
+
+  checkpoint:
+    output_dir: "checkpoints/stage2"
+    save_steps: 1000
+    save_total_limit: 2
+
+  logging:
+    log_steps: 50
+
+# ============================================================================
+# Stage 3: New Token Refinement
+# ============================================================================
+stage3:
+  name: "Stage 3 - New Token Refinement"
+  description: "새 토큰 세밀 조정 (High Quality Synthetic Text)"
+
+  trainable_params:
+    - "model.embed_tokens"  # 새 토큰만
+  freeze_params:
+    - "model.layers"
+
+  train_new_tokens_only: true
+  old_vocab_size: 151669
+
+  contrastive:
+    temperature: 0.05
+    pooling: "mean"
+
+  dataset:
+    local: true
+    local_path: "~/haerae_dataset"
+    name: "KOREAN-SyntheticText"
+    max_samples: 200000
+
+  training:
+    num_epochs: 1
+    batch_size: 12
+    gradient_accumulation_steps: 5
+    max_length: 192
+    learning_rate: 1e-4
+    weight_decay: 0.01
+    warmup_ratio: 0.1
+    lr_scheduler_type: "cosine"
+    max_grad_norm: 1.0
+
+  optimization:
+    mixed_precision: "bf16"
+
+  checkpoint:
+    output_dir: "checkpoints/stage3"
+    save_steps: 1000
+    save_total_limit: 2
+
+  logging:
+    log_steps: 50
+
+# ============================================================================
+# Stage 4: Full Vocabulary Harmonization
+# ============================================================================
+stage4:
+  name: "Stage 4 - Full Vocabulary Harmonization"
+  description: "전체 vocabulary harmonization (old + new) with diverse data"
+
+  trainable_params:
+    - "model.embed_tokens"  # 전체 토큰!
+  freeze_params:
+    - "model.layers"
+
+  train_new_tokens_only: false  # 전체 학습
+
+  contrastive:
+    temperature: 0.05
+    pooling: "mean"
+
+  dataset:
+    local: true
+    local_path: "~/haerae_dataset"
+    mixed:
+      - name: "KOREAN-WEBTEXT"
+        max_samples: 100000
+      - name: "KOREAN-SyntheticText"
+        max_samples: 80000
+      - name: "KoSimpleEval"
+        max_samples: 20000
+
+  training:
+    num_epochs: 1
+    batch_size: 10
+    gradient_accumulation_steps: 6
+    max_length: 192
+    learning_rate: 5e-5
+    weight_decay: 0.01
+    warmup_ratio: 0.1
+    lr_scheduler_type: "cosine"
+    max_grad_norm: 1.0
+
+  optimization:
+    mixed_precision: "bf16"
+
+  checkpoint:
+    output_dir: "checkpoints/stage4"
+    save_steps: 1000
+    save_total_limit: 2
+
+  logging:
+    log_steps: 50
+
+# ============================================================================
+# Stage 5: Transformer Enhancement with LoRA
+# ============================================================================
+stage5:
+  name: "Stage 5 - Transformer Enhancement with LoRA"
+  description: "LoRA로 Transformer 레이어 학습 (Reasoning data)"
+
+  use_lora: true
+  lora_config:
+    r: 64
+    lora_alpha: 128
+    lora_dropout: 0.05
+    target_modules:
+      - "q_proj"
+      - "k_proj"
+      - "v_proj"
+      - "o_proj"
+    bias: "none"
+
+  contrastive:
+    temperature: 0.05
+    pooling: "mean"
+
+  dataset:
+    local: true
+    local_path: "~/haerae_dataset"
+    mixed:
+      - name: "HAE-RAE-COT"
+        max_samples: 100000
+      - name: "HR-Instruct-Math"
+        max_samples: 100000
+
+  training:
+    num_epochs: 1
+    batch_size: 8
+    gradient_accumulation_steps: 8
+    max_length: 192
+    learning_rate: 5e-5
+    weight_decay: 0.01
+    warmup_ratio: 0.05
+    lr_scheduler_type: "cosine"
+    max_grad_norm: 1.0
+
+  optimization:
+    mixed_precision: "bf16"
+    gradient_checkpointing: true
+
+  checkpoint:
+    output_dir: "checkpoints/stage5"
+    save_steps: 1000
+    save_total_limit: 2
+
+  logging:
+    log_steps: 50
+
+# ============================================================================
+# Stage 6: Advanced Contrastive Learning
+# ============================================================================
+stage6:
+  name: "Stage 6 - Advanced Contrastive Learning"
+  description: "SimCSE++ 고급 대조 학습 (High quality feedback)"
+
+  use_lora: true
+  lora_config:
+    r: 32
+    lora_alpha: 64
+    lora_dropout: 0.05
+    target_modules:
+      - "q_proj"
+      - "k_proj"
+      - "v_proj"
+      - "o_proj"
+    bias: "none"
+
+  contrastive:
+    temperature: 0.05
+    pooling: "mean"
+
+  dataset:
+    local: true
+    local_path: "~/haerae_dataset"
+    name: "K2-Feedback"
+    min_score: 5
+    max_samples: 150000
+
+  training:
+    num_epochs: 2
+    batch_size: 10
+    gradient_accumulation_steps: 6
+    max_length: 192
+    learning_rate: 3e-5
+    weight_decay: 0.01
+    warmup_ratio: 0.1
+    lr_scheduler_type: "cosine"
+    max_grad_norm: 1.0
+
+  optimization:
+    mixed_precision: "bf16"
+    gradient_checkpointing: true
+
+  checkpoint:
+    output_dir: "checkpoints/stage6"
+    save_steps: 1000
+    save_total_limit: 2
+
+  logging:
+    log_steps: 50
+
+# ============================================================================
+# Hardware Settings (A5000 x6)
+# ============================================================================
+hardware:
+  num_gpus: 6
+  gpu_ids: [4, 5, 6, 7, 8, 9]
+  gpu_type: "A5000"
+  gpu_memory_gb: 24
+  distributed_backend: "nccl"
+
+environment:
+  CUDA_VISIBLE_DEVICES: "4,5,6,7,8,9"
+  TOKENIZERS_PARALLELISM: "false"
+  NCCL_IB_DISABLE: "1"
+  NCCL_P2P_DISABLE: "1"
+  NCCL_SHM_DISABLE: "1"
+  TORCH_NCCL_BLOCKING_WAIT: "1"
+  CUDA_DEVICE_MAX_CONNECTIONS: "1"
+  NCCL_DEBUG: "WARN"
+  NCCL_SOCKET_FAMILY: "AF_INET"
