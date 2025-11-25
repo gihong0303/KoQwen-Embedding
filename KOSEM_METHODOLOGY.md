@@ -1,4 +1,4 @@
-# KURE: Korean Universal Representation Enhancement
+# KOSEM: Korean Universal Representation Enhancement
 
 ## 한국어 임베딩 SOTA를 위한 통합 학습 프레임워크
 
@@ -6,7 +6,7 @@
 
 ## Executive Summary
 
-**KURE**는 한국어 임베딩 모델의 성능을 극대화하기 위해 설계된 8단계 학습 파이프라인입니다.
+**KOSEM**는 한국어 임베딩 모델의 성능을 극대화하기 위해 설계된 8단계 학습 파이프라인입니다.
 
 기존 CLSA + JLCE + MCL 접근법의 한계를 극복하고, 다음 6가지 핵심 혁신을 통해 **SOTA 성능**을 달성합니다.
 
@@ -423,7 +423,7 @@ class EarlyStopping:
 
 ---
 
-## 8-Stage KURE Pipeline
+## 8-Stage KOSEM Pipeline
 
 ```mermaid
 graph TD
@@ -435,7 +435,7 @@ graph TD
     F --> G[Stage 5: LoRA + MGR]
     G --> H[Stage 6: LoRA + MGR]
     H --> I[Stage 7: Final Refinement + ALB]
-    I --> J[Final Model: KURE-Enhanced]
+    I --> J[Final Model: KOSEM-Enhanced]
 
     K[ALB] -.-> B & C & D & E & F & G & H & I
     L[VGT] -.-> B & C & D & E & F & G & H & I
@@ -458,7 +458,7 @@ graph TD
 
 ## Expected Performance
 
-| Metric | Baseline | CLSA+MCL | **KURE** |
+| Metric | Baseline | CLSA+MCL | **KOSEM** |
 |--------|----------|----------|----------|
 | Ko-StrategyQA | +12.0% | +20-25% | **+30-35%** |
 | PublicHealthQA | -5.5% | +5-10% | **+15-20%** |

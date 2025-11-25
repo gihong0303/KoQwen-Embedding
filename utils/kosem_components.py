@@ -1,9 +1,9 @@
 """
-KURE Core Components
+KOSEM Core Components
 
 Multi-granularity Representation (MGR) + Adaptive Loss Balancing (ALB) + Validation-guided Training (VGT)
 
-KURE 핵심 구성 요소 통합 모듈
+KOSEM 핵심 구성 요소 통합 모듈
 """
 
 import torch
@@ -674,12 +674,12 @@ class ValidationCallback:
 
 
 # ============================================================================
-# KURE Unified Loss
+# KOSEM Unified Loss
 # ============================================================================
 
-class KURELoss(nn.Module):
+class KOSEMLoss(nn.Module):
     """
-    KURE 통합 손실 함수
+    KOSEM 통합 손실 함수
 
     모든 구성 요소를 통합:
     - PJC (Phonological Jamo Composition)

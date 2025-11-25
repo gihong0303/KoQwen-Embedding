@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-KURE Trainer: Korean Universal Representation Enhancement
+KOSEM Trainer: Korean Universal Representation Enhancement
 
-통합 KURE 트레이너
+통합 KOSEM 트레이너
 - PJC: Phonological Jamo Composition
 - MGC: Morpheme-guided Curriculum
 - HCL: Hierarchical Contrastive Learning
@@ -34,7 +34,7 @@ from transformers import AutoTokenizer, AutoModel, get_scheduler, set_seed
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-# Import KURE components
+# Import KOSEM components
 from utils.phonological_jamo import PhonologicalJamoComposer, PJCLoss
 from utils.morpheme_curriculum import (
     MorphemeAnalyzer, AdaptiveCurriculumScheduler,
@@ -44,9 +44,9 @@ from utils.hierarchical_contrastive import (
     HierarchicalContrastiveLoss, HardNegativeMiner,
     SentenceContrastiveLoss
 )
-from utils.kure_components import (
+from utils.kosem_components import (
     MatryoshkaLoss, GradNormBalancer, SimpleLossBalancer,
-    EarlyStopping, ValidationCallback, KURELoss
+    EarlyStopping, ValidationCallback, KOSEMLoss
 )
 from utils.local_dataset_loader import LocalDatasetLoader
 
@@ -90,14 +90,14 @@ def is_main_process():
 
 
 # ============================================================================
-# KURE Trainer
+# KOSEM Trainer
 # ============================================================================
 
-class KURETrainer:
+class KOSEMTrainer:
     """
-    KURE 통합 트레이너
+    KOSEM 통합 트레이너
 
-    모든 KURE 구성 요소를 통합하여 학습 수행
+    모든 KOSEM 구성 요소를 통합하여 학습 수행
     """
 
     def __init__(
@@ -116,7 +116,7 @@ class KURETrainer:
 
         self.project_config = self.config['project']
         self.stage_config = self.config[stage_name]
-        self.kure_config = self.config.get('kure', {})
+        self.kosem_config = self.config.get('kosem', {})
         self.model_path = model_path
 
         self.setup_logging()
@@ -134,7 +134,7 @@ class KURETrainer:
                 level=logging.INFO,
                 format='%(asctime)s - %(levelname)s - %(message)s',
                 handlers=[
-                    logging.FileHandler(log_dir / f'kure_{self.stage_name}.log'),
+                    logging.FileHandler(log_dir / f'kosem_{self.stage_name}.log'),
                     logging.StreamHandler()
                 ]
             )
@@ -145,9 +145,9 @@ class KURETrainer:
             self.logger.info(message)
 
     def prepare_components(self):
-        """KURE 구성 요소 초기화"""
+        """KOSEM 구성 요소 초기화"""
         self.log("=" * 80)
-        self.log("Initializing KURE Components")
+        self.log("Initializing KOSEM Components")
         self.log("=" * 80)
 
         stage_cfg = self.stage_config
@@ -169,7 +169,7 @@ class KURETrainer:
         # 2. MGC (Morpheme-guided Curriculum)
         self.use_mgc = stage_cfg.get('use_mgc', False)
         if self.use_mgc:
-            mgc_cfg = self.kure_config.get('mgc', {})
+            mgc_cfg = self.kosem_config.get('mgc', {})
             self.morpheme_analyzer = MorphemeAnalyzer(
                 use_mecab=mgc_cfg.get('use_mecab', True),
                 cache_path=mgc_cfg.get('cache_path')
@@ -187,7 +187,7 @@ class KURETrainer:
         # 3. HCL (Hierarchical Contrastive Learning)
         self.use_hcl = stage_cfg.get('use_hcl', False)
         if self.use_hcl:
-            hcl_cfg = stage_cfg.get('hcl', self.kure_config.get('hcl', {}))
+            hcl_cfg = stage_cfg.get('hcl', self.kosem_config.get('hcl', {}))
             self.hcl_loss = HierarchicalContrastiveLoss(
                 hidden_dim=hidden_dim,
                 token_weight=hcl_cfg.get('token_weight', 0.2),
@@ -201,7 +201,7 @@ class KURETrainer:
         # 4. MGR (Multi-granularity Representation / Matryoshka)
         self.use_mgr = stage_cfg.get('use_mgr', False)
         if self.use_mgr:
-            mgr_cfg = stage_cfg.get('mgr', self.kure_config.get('mgr', {}))
+            mgr_cfg = stage_cfg.get('mgr', self.kosem_config.get('mgr', {}))
             self.matryoshka_loss = MatryoshkaLoss(
                 full_dim=hidden_dim,
                 dimensions=mgr_cfg.get('dimensions', [1536, 768, 384, 192, 96]),
@@ -212,7 +212,7 @@ class KURETrainer:
         # 5. ALB (Adaptive Loss Balancing)
         self.use_alb = stage_cfg.get('use_alb', False)
         if self.use_alb:
-            alb_cfg = stage_cfg.get('alb', self.kure_config.get('alb', {}))
+            alb_cfg = stage_cfg.get('alb', self.kosem_config.get('alb', {}))
             loss_names = self._get_active_loss_names()
             if alb_cfg.get('use_gradnorm', True):
                 self.loss_balancer = GradNormBalancer(
@@ -692,7 +692,7 @@ class KURETrainer:
     def train(self):
         """전체 학습"""
         self.log("\n" + "=" * 80)
-        self.log("🚀 KURE Training Start")
+        self.log("🚀 KOSEM Training Start")
         self.log("=" * 80)
 
         num_epochs = self.stage_config['training']['num_epochs']
@@ -728,8 +728,8 @@ class KURETrainer:
 # ============================================================================
 
 def main():
-    parser = argparse.ArgumentParser(description="KURE Trainer")
-    parser.add_argument("--config", type=str, default="configs/kure_config.yaml")
+    parser = argparse.ArgumentParser(description="KOSEM Trainer")
+    parser.add_argument("--config", type=str, default="configs/kosem_config.yaml")
     parser.add_argument("--stage", type=str, required=True, help="Stage name (e.g., stage1)")
     parser.add_argument("--model_path", type=str, default=None)
     parser.add_argument("--seed", type=int, default=42)
@@ -740,7 +740,7 @@ def main():
     os.environ['TOKENIZERS_PARALLELISM'] = 'false'
 
     try:
-        trainer = KURETrainer(
+        trainer = KOSEMTrainer(
             config_path=args.config,
             stage_name=args.stage,
             model_path=args.model_path

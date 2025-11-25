@@ -1,5 +1,5 @@
 # ============================================================================
-# KURE: Korean Universal Representation Enhancement
+# KOSEM: Korean Universal Representation Enhancement
 # 8-Stage SOTA Pipeline Configuration
 # ============================================================================
 #
@@ -14,7 +14,7 @@
 # ============================================================================
 
 project:
-  name: "kure-qwen3-embedding"
+  name: "kosem-qwen3-embedding"
   base_model: "Qwen/Qwen3-Embedding-0.6B"
   tokenizer_path: "outputs/koqwen-expanded"
   original_vocab_size: 151669
@@ -22,9 +22,9 @@ project:
   new_tokens_count: 68029
 
 # ============================================================================
-# Global KURE Settings
+# Global KOSEM Settings
 # ============================================================================
-kure:
+kosem:
   # Phonological Jamo Composition (PJC)
   pjc:
     enabled: true
@@ -104,7 +104,7 @@ stage0:
     mixed_precision: "bf16"
 
   checkpoint:
-    output_dir: "checkpoints/kure_stage0"
+    output_dir: "checkpoints/kosem_stage0"
     save_steps: 500
     save_total_limit: 3
 
@@ -121,7 +121,7 @@ stage1:
   train_new_tokens_only: true
   old_vocab_size: 151669
 
-  # KURE components
+  # KOSEM components
   use_pjc: true
   use_mgc: true
   use_hcl: true
@@ -173,7 +173,7 @@ stage1:
     gradient_checkpointing: false
 
   checkpoint:
-    output_dir: "checkpoints/kure_stage1"
+    output_dir: "checkpoints/kosem_stage1"
     save_steps: 1000
     save_total_limit: 3
 
@@ -240,7 +240,7 @@ stage2:
     mixed_precision: "bf16"
 
   checkpoint:
-    output_dir: "checkpoints/kure_stage2"
+    output_dir: "checkpoints/kosem_stage2"
     save_steps: 1000
     save_total_limit: 3
 
@@ -309,7 +309,7 @@ stage3:
     mixed_precision: "bf16"
 
   checkpoint:
-    output_dir: "checkpoints/kure_stage3"
+    output_dir: "checkpoints/kosem_stage3"
     save_steps: 1000
     save_total_limit: 3
 
@@ -382,7 +382,7 @@ stage4:
     mixed_precision: "bf16"
 
   checkpoint:
-    output_dir: "checkpoints/kure_stage4"
+    output_dir: "checkpoints/kosem_stage4"
     save_steps: 1000
     save_total_limit: 3
 
@@ -463,7 +463,7 @@ stage5:
     gradient_checkpointing: true
 
   checkpoint:
-    output_dir: "checkpoints/kure_stage5"
+    output_dir: "checkpoints/kosem_stage5"
     save_steps: 1000
     save_total_limit: 3
 
@@ -534,7 +534,7 @@ stage6:
     gradient_checkpointing: true
 
   checkpoint:
-    output_dir: "checkpoints/kure_stage6"
+    output_dir: "checkpoints/kosem_stage6"
     save_steps: 1000
     save_total_limit: 3
 
@@ -542,11 +542,11 @@ stage6:
     log_steps: 50
 
 # ============================================================================
-# Stage 7: Final Refinement (All KURE Components)
+# Stage 7: Final Refinement (All KOSEM Components)
 # ============================================================================
 stage7:
-  name: "Stage 7 - Final KURE Refinement"
-  description: "모든 KURE 구성 요소 통합 최종 조정"
+  name: "Stage 7 - Final KOSEM Refinement"
+  description: "모든 KOSEM 구성 요소 통합 최종 조정"
 
   use_lora: true
   lora_config:
@@ -619,7 +619,7 @@ stage7:
     gradient_checkpointing: true
 
   checkpoint:
-    output_dir: "checkpoints/kure_stage7"
+    output_dir: "checkpoints/kosem_stage7"
     save_steps: 500
     save_total_limit: 3
 
@@ -646,7 +646,7 @@ environment:
 # ============================================================================
 # Expected Performance (vs Baseline)
 # ============================================================================
-# | Metric          | Baseline | KURE Expected |
+# | Metric          | Baseline | KOSEM Expected |
 # |-----------------|----------|---------------|
 # | Ko-StrategyQA   | +12.0%   | +30-35%       |
 # | PublicHealthQA  | -5.5%    | +15-20%       |

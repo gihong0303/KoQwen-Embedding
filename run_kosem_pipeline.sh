@@ -1,13 +1,13 @@
 #!/bin/bash
 # ============================================================================
-# KURE Pipeline Runner
+# KOSEM Pipeline Runner
 # Korean Universal Representation Enhancement
 # ============================================================================
 
 set -e
 
 # Configuration
-CONFIG="configs/kure_config.yaml"
+CONFIG="configs/kosem_config.yaml"
 NUM_GPUS=6
 MASTER_PORT=29500
 
@@ -107,7 +107,7 @@ run_stage() {
     if [ -z "$prev_stage" ]; then
         MODEL_PATH=""
     else
-        MODEL_PATH="checkpoints/kure_${prev_stage}/final"
+        MODEL_PATH="checkpoints/kosem_${prev_stage}/final"
         if [ ! -d "$MODEL_PATH" ]; then
             log_error "Previous stage checkpoint not found: $MODEL_PATH"
             exit 1
@@ -124,7 +124,7 @@ run_stage() {
         torchrun \
             --nproc_per_node=$NUM_GPUS \
             --master_port=$MASTER_PORT \
-            scripts/kure_trainer.py \
+            scripts/kosem_trainer.py \
             --config $CONFIG \
             --stage $stage \
             --model_path $MODEL_PATH
@@ -132,7 +132,7 @@ run_stage() {
         torchrun \
             --nproc_per_node=$NUM_GPUS \
             --master_port=$MASTER_PORT \
-            scripts/kure_trainer.py \
+            scripts/kosem_trainer.py \
             --config $CONFIG \
             --stage $stage
     fi
@@ -142,9 +142,9 @@ run_stage() {
 
 # Main pipeline
 run_pipeline() {
-    print_header "KURE Pipeline"
+    print_header "KOSEM Pipeline"
 
-    log_info "Starting 8-stage KURE training pipeline..."
+    log_info "Starting 8-stage KOSEM training pipeline..."
     log_info "Estimated time: 20-24 hours"
 
     START_TIME=$(date +%s)
@@ -180,7 +180,7 @@ run_pipeline() {
 
     print_header "Pipeline Complete!"
     log_success "Total training time: ${HOURS}h ${MINUTES}m"
-    log_success "Final model: checkpoints/kure_stage7/final"
+    log_success "Final model: checkpoints/kosem_stage7/final"
 }
 
 # Parse arguments
