@@ -1,0 +1,656 @@
+# ============================================================================
+# KOSEM: Korean Universal Representation Enhancement
+# 8-Stage SOTA Pipeline Configuration
+# ============================================================================
+#
+# 핵심 혁신:
+# - PJC: Phonological Jamo Composition (음운 규칙 반영 자모 합성)
+# - MGC: Morpheme-guided Curriculum (형태소 분석 기반 커리큘럼)
+# - HCL: Hierarchical Contrastive Learning (계층적 대조 학습)
+# - MGR: Multi-granularity Representation (Matryoshka 스타일)
+# - ALB: Adaptive Loss Balancing (GradNorm 기반)
+# - VGT: Validation-guided Training (Early Stopping)
+#
+# ============================================================================
+
+project:
+  name: "kosem-qwen3-embedding"
+  base_model: "Qwen/Qwen3-Embedding-0.6B"
+  tokenizer_path: "outputs/koqwen-expanded"
+  original_vocab_size: 151669
+  expanded_vocab_size: 219698
+  new_tokens_count: 68029
+
+# ============================================================================
+# Global KOSEM Settings
+# ============================================================================
+kosem:
+  # Phonological Jamo Composition (PJC)
+  pjc:
+    enabled: true
+    use_phonological_rules: true
+    inter_syllable_type: "transformer"  # 'transformer', 'lstm', 'none'
+    blend_ratio: 0.4  # PJC vs existing embedding blend
+
+  # Morpheme-guided Curriculum (MGC)
+  mgc:
+    enabled: true
+    use_mecab: true
+    cache_path: "outputs/morpheme_analysis/cache.json"
+    adaptation_rate: 0.1
+
+  # Hierarchical Contrastive Learning (HCL)
+  hcl:
+    enabled: true
+    use_hard_negatives: true
+    memory_size: 65536
+    token_weight: 0.2
+    phrase_weight: 0.3
+    sentence_weight: 0.5
+
+  # Multi-granularity Representation (MGR)
+  mgr:
+    enabled: true
+    dimensions: [1536, 768, 384, 192, 96]
+    use_matryoshka: true
+
+  # Adaptive Loss Balancing (ALB)
+  alb:
+    enabled: true
+    use_gradnorm: true
+    alpha: 1.5  # GradNorm asymmetry parameter
+    adaptation_rate: 0.01
+
+  # Validation-guided Training (VGT)
+  vgt:
+    enabled: true
+    eval_steps: 500
+    patience: 5
+    min_delta: 0.001
+    save_best: true
+
+# ============================================================================
+# Stage 0: Cross-lingual Semantic Anchoring (CLSA) + CAR
+# ============================================================================
+stage0:
+  name: "Stage 0 - CLSA with Confidence-based Anchor Refinement"
+  description: "새 한국어 토큰을 다국어 의미 공간에 정렬 + 앵커 품질 기반 가중치"
+
+  train_new_tokens_only: true
+  old_vocab_size: 151669
+
+  dataset:
+    bilingual_dict_path: "outputs/bilingual_dictionary.json"
+    min_anchors: 2
+    use_confidence_weighting: true
+
+  # CLSA-specific
+  clsa:
+    diversity_weight: 0.1
+    distance_type: "cosine"
+    confidence_threshold: 0.5
+
+  training:
+    num_epochs: 3
+    batch_size: 128
+    gradient_accumulation_steps: 2
+    learning_rate: 5e-4
+    weight_decay: 0.01
+    warmup_ratio: 0.2
+    lr_scheduler_type: "cosine"
+    max_grad_norm: 1.0
+
+  optimization:
+    mixed_precision: "bf16"
+
+  checkpoint:
+    output_dir: "checkpoints/kosem_stage0"
+    save_steps: 500
+    save_total_limit: 3
+
+  logging:
+    log_steps: 50
+
+# ============================================================================
+# Stage 1: Easy Tokens (PJC + MGC + HCL)
+# ============================================================================
+stage1:
+  name: "Stage 1 - Easy Tokens with PJC + MGC"
+  description: "단일 어근, 고빈도 토큰 학습 (Top 30% easiest)"
+
+  train_new_tokens_only: true
+  old_vocab_size: 151669
+
+  # KOSEM components
+  use_pjc: true
+  use_mgc: true
+  use_hcl: true
+
+  pjc:
+    blend_ratio: 0.5  # Stage 1: 자모 임베딩 강조
+
+  mgc:
+    mode: "easy"
+    priority_weight: 3.0
+
+  hcl:
+    token_weight: 0.3
+    phrase_weight: 0.3
+    sentence_weight: 0.4
+
+  contrastive:
+    temperature: 0.05
+    pooling: "mean"
+
+  dataset:
+    mixed:
+      - name: "HAERAE-HUB/KOREAN-WEBTEXT"
+        source: "huggingface"
+        max_samples: 150000
+      - name: "kakaobrain/kor_nli"
+        source: "huggingface"
+        split: "train"
+        max_samples: 100000
+
+  training:
+    num_epochs: 2
+    batch_size: 20
+    gradient_accumulation_steps: 3
+    max_length: 192
+    learning_rate: 3e-4
+    weight_decay: 0.01
+    warmup_ratio: 0.1
+    lr_scheduler_type: "cosine"
+    max_grad_norm: 1.0
+
+  validation:
+    enabled: true
+    eval_steps: 500
+    dataset_size: 5000
+
+  optimization:
+    mixed_precision: "bf16"
+    gradient_checkpointing: false
+
+  checkpoint:
+    output_dir: "checkpoints/kosem_stage1"
+    save_steps: 1000
+    save_total_limit: 3
+
+  logging:
+    log_steps: 50
+
+# ============================================================================
+# Stage 2: Medium Tokens (PJC + MGC + HCL)
+# ============================================================================
+stage2:
+  name: "Stage 2 - Medium Tokens with PJC + MGC"
+  description: "어근+조사 조합 토큰 학습 (Middle 40%)"
+
+  train_new_tokens_only: true
+  old_vocab_size: 151669
+
+  use_pjc: true
+  use_mgc: true
+  use_hcl: true
+
+  pjc:
+    blend_ratio: 0.4  # 균형
+
+  mgc:
+    mode: "medium"
+    priority_weight: 3.0
+
+  hcl:
+    token_weight: 0.25
+    phrase_weight: 0.35
+    sentence_weight: 0.4
+
+  contrastive:
+    temperature: 0.05
+    pooling: "mean"
+
+  dataset:
+    mixed:
+      - name: "HAERAE-HUB/KOREAN-WEBTEXT"
+        source: "huggingface"
+        max_samples: 150000
+      - name: "kakaobrain/kor_nli"
+        source: "huggingface"
+        split: "train"
+        max_samples: 100000
+
+  training:
+    num_epochs: 1
+    batch_size: 16
+    gradient_accumulation_steps: 4
+    max_length: 192
+    learning_rate: 2e-4
+    weight_decay: 0.01
+    warmup_ratio: 0.1
+    lr_scheduler_type: "cosine"
+    max_grad_norm: 1.0
+
+  validation:
+    enabled: true
+    eval_steps: 500
+    dataset_size: 5000
+
+  optimization:
+    mixed_precision: "bf16"
+
+  checkpoint:
+    output_dir: "checkpoints/kosem_stage2"
+    save_steps: 1000
+    save_total_limit: 3
+
+  logging:
+    log_steps: 50
+
+# ============================================================================
+# Stage 3: Hard Tokens (PJC + MGC + HCL)
+# ============================================================================
+stage3:
+  name: "Stage 3 - Hard Tokens with PJC + MGC"
+  description: "복합 형태소, 저빈도 토큰 학습 (Bottom 30%)"
+
+  train_new_tokens_only: true
+  old_vocab_size: 151669
+
+  use_pjc: true
+  use_mgc: true
+  use_hcl: true
+
+  pjc:
+    blend_ratio: 0.3  # 형태소 커리큘럼 강조
+
+  mgc:
+    mode: "hard"
+    priority_weight: 4.0
+
+  hcl:
+    token_weight: 0.2
+    phrase_weight: 0.3
+    sentence_weight: 0.5
+    use_hard_negatives: true
+
+  contrastive:
+    temperature: 0.05
+    pooling: "mean"
+
+  dataset:
+    mixed:
+      - name: "KOREAN-SyntheticText"
+        source: "local"
+        local_path: "~/haerae_dataset/KOREAN-SyntheticText"
+        max_samples: 100000
+      - name: "kakaobrain/kor_nli"
+        source: "huggingface"
+        split: "train"
+        max_samples: 50000
+
+  training:
+    num_epochs: 1
+    batch_size: 12
+    gradient_accumulation_steps: 5
+    max_length: 192
+    learning_rate: 1e-4
+    weight_decay: 0.01
+    warmup_ratio: 0.15
+    lr_scheduler_type: "cosine_with_restarts"
+    max_grad_norm: 0.5  # 더 엄격한 gradient clipping
+
+  validation:
+    enabled: true
+    eval_steps: 500
+    dataset_size: 5000
+
+  optimization:
+    mixed_precision: "bf16"
+
+  checkpoint:
+    output_dir: "checkpoints/kosem_stage3"
+    save_steps: 1000
+    save_total_limit: 3
+
+  logging:
+    log_steps: 50
+
+# ============================================================================
+# Stage 4: Full Vocabulary Harmonization (HCL + MGR)
+# ============================================================================
+stage4:
+  name: "Stage 4 - Full Vocabulary Harmonization"
+  description: "전체 어휘 통합 + 계층적 대조 학습"
+
+  train_new_tokens_only: false  # 전체 토큰 학습
+
+  use_pjc: false  # 이 단계부터 PJC 비활성화
+  use_hcl: true
+  use_mgr: true
+
+  hcl:
+    token_weight: 0.15
+    phrase_weight: 0.35
+    sentence_weight: 0.5
+    use_hard_negatives: true
+
+  mgr:
+    use_matryoshka: true
+    dimensions: [1536, 768, 384]
+
+  contrastive:
+    temperature: 0.05
+    pooling: "mean"
+
+  dataset:
+    mixed:
+      - name: "KOREAN-WEBTEXT"
+        source: "local"
+        local_path: "~/haerae_dataset/KOREAN-WEBTEXT"
+        max_samples: 80000
+      - name: "KOREAN-SyntheticText"
+        source: "local"
+        local_path: "~/haerae_dataset/KOREAN-SyntheticText"
+        max_samples: 60000
+      - name: "KoSimpleEval"
+        source: "local"
+        local_path: "~/haerae_dataset/KoSimpleEval"
+        max_samples: 20000
+      - name: "kakaobrain/kor_nli"
+        source: "huggingface"
+        split: "train"
+        max_samples: 40000
+
+  training:
+    num_epochs: 1
+    batch_size: 12
+    gradient_accumulation_steps: 5
+    max_length: 192
+    learning_rate: 5e-5
+    weight_decay: 0.01
+    warmup_ratio: 0.1
+    lr_scheduler_type: "cosine"
+    max_grad_norm: 1.0
+
+  validation:
+    enabled: true
+    eval_steps: 500
+    dataset_size: 5000
+
+  optimization:
+    mixed_precision: "bf16"
+
+  checkpoint:
+    output_dir: "checkpoints/kosem_stage4"
+    save_steps: 1000
+    save_total_limit: 3
+
+  logging:
+    log_steps: 50
+
+# ============================================================================
+# Stage 5: LoRA Transformer Enhancement (HCL + MGR + ALB)
+# ============================================================================
+stage5:
+  name: "Stage 5 - LoRA Transformer Enhancement"
+  description: "LoRA로 Transformer 레이어 학습 + Adaptive Loss Balancing"
+
+  use_lora: true
+  lora_config:
+    r: 64
+    lora_alpha: 128
+    lora_dropout: 0.05
+    target_modules:
+      - "q_proj"
+      - "k_proj"
+      - "v_proj"
+      - "o_proj"
+      - "up_proj"     # MLP 추가
+      - "down_proj"   # MLP 추가
+    bias: "none"
+
+  use_hcl: true
+  use_mgr: true
+  use_alb: true
+
+  hcl:
+    sentence_weight: 0.7
+    phrase_weight: 0.2
+    token_weight: 0.1
+
+  mgr:
+    use_matryoshka: true
+    dimensions: [1536, 768, 384, 192]
+
+  alb:
+    use_gradnorm: true
+    alpha: 1.5
+
+  contrastive:
+    temperature: 0.05
+    pooling: "mean"
+
+  dataset:
+    mixed:
+      - name: "HAE-RAE-COT"
+        source: "local"
+        local_path: "~/haerae_dataset/HAE-RAE-COT"
+        max_samples: 100000
+      - name: "HR-Instruct-Math"
+        source: "local"
+        local_path: "~/haerae_dataset/HR-Instruct-Math"
+        max_samples: 100000
+
+  training:
+    num_epochs: 1
+    batch_size: 10
+    gradient_accumulation_steps: 6
+    max_length: 192
+    learning_rate: 5e-5
+    weight_decay: 0.01
+    warmup_ratio: 0.05
+    lr_scheduler_type: "cosine"
+    max_grad_norm: 1.0
+
+  validation:
+    enabled: true
+    eval_steps: 500
+    dataset_size: 5000
+
+  optimization:
+    mixed_precision: "bf16"
+    gradient_checkpointing: true
+
+  checkpoint:
+    output_dir: "checkpoints/kosem_stage5"
+    save_steps: 1000
+    save_total_limit: 3
+
+  logging:
+    log_steps: 50
+
+# ============================================================================
+# Stage 6: Advanced Contrastive Learning (HCL + MGR + ALB)
+# ============================================================================
+stage6:
+  name: "Stage 6 - Advanced Contrastive Learning"
+  description: "고품질 피드백 데이터로 세밀 조정"
+
+  use_lora: true
+  lora_config:
+    r: 32
+    lora_alpha: 64
+    lora_dropout: 0.05
+    target_modules:
+      - "q_proj"
+      - "k_proj"
+      - "v_proj"
+      - "o_proj"
+    bias: "none"
+
+  use_hcl: true
+  use_mgr: true
+  use_alb: true
+
+  hcl:
+    sentence_weight: 0.6
+    phrase_weight: 0.3
+    token_weight: 0.1
+    use_hard_negatives: true
+
+  contrastive:
+    temperature: 0.05
+    pooling: "mean"
+
+  dataset:
+    name: "K2-Feedback"
+    source: "local"
+    local_path: "~/haerae_dataset/K2-Feedback"
+    min_score: 5
+    max_samples: 150000
+
+  training:
+    num_epochs: 2
+    batch_size: 12
+    gradient_accumulation_steps: 5
+    max_length: 192
+    learning_rate: 3e-5
+    weight_decay: 0.01
+    warmup_ratio: 0.1
+    lr_scheduler_type: "cosine"
+    max_grad_norm: 1.0
+
+  validation:
+    enabled: true
+    eval_steps: 500
+    dataset_size: 5000
+    early_stopping:
+      patience: 3
+      min_delta: 0.001
+
+  optimization:
+    mixed_precision: "bf16"
+    gradient_checkpointing: true
+
+  checkpoint:
+    output_dir: "checkpoints/kosem_stage6"
+    save_steps: 1000
+    save_total_limit: 3
+
+  logging:
+    log_steps: 50
+
+# ============================================================================
+# Stage 7: Final Refinement (All KOSEM Components)
+# ============================================================================
+stage7:
+  name: "Stage 7 - Final KOSEM Refinement"
+  description: "모든 KOSEM 구성 요소 통합 최종 조정"
+
+  use_lora: true
+  lora_config:
+    r: 16
+    lora_alpha: 32
+    lora_dropout: 0.03
+    target_modules:
+      - "q_proj"
+      - "k_proj"
+      - "v_proj"
+      - "o_proj"
+    bias: "none"
+
+  # 모든 구성 요소 활성화
+  use_hcl: true
+  use_mgr: true
+  use_alb: true
+
+  hcl:
+    sentence_weight: 0.5
+    phrase_weight: 0.3
+    token_weight: 0.2
+    use_hard_negatives: true
+
+  mgr:
+    use_matryoshka: true
+    dimensions: [1536, 768, 384, 192, 96]
+
+  alb:
+    use_gradnorm: true
+    alpha: 2.0  # 더 강한 균형화
+
+  contrastive:
+    temperature: 0.05
+    pooling: "mean"
+
+  dataset:
+    mixed:
+      - name: "K2-Feedback"
+        source: "local"
+        local_path: "~/haerae_dataset/K2-Feedback"
+        min_score: 5
+        max_samples: 50000
+      - name: "kakaobrain/kor_nli"
+        source: "huggingface"
+        split: "validation"
+        max_samples: 20000
+
+  training:
+    num_epochs: 1
+    batch_size: 10
+    gradient_accumulation_steps: 6
+    max_length: 192
+    learning_rate: 1e-5
+    weight_decay: 0.01
+    warmup_ratio: 0.1
+    lr_scheduler_type: "linear"
+    max_grad_norm: 0.5
+
+  validation:
+    enabled: true
+    eval_steps: 300
+    dataset_size: 5000
+    early_stopping:
+      patience: 3
+      min_delta: 0.0005
+
+  optimization:
+    mixed_precision: "bf16"
+    gradient_checkpointing: true
+
+  checkpoint:
+    output_dir: "checkpoints/kosem_stage7"
+    save_steps: 500
+    save_total_limit: 3
+
+  logging:
+    log_steps: 30
+
+# ============================================================================
+# Hardware Settings
+# ============================================================================
+hardware:
+  num_gpus: 8
+  gpu_ids: [1, 2, 3, 4, 5, 6, 7, 8]
+  gpu_type: "A5000"
+  gpu_memory_gb: 24
+  distributed_backend: "nccl"
+
+environment:
+  TOKENIZERS_PARALLELISM: "false"
+  NCCL_IB_DISABLE: "1"
+  NCCL_P2P_DISABLE: "1"
+  TORCH_NCCL_BLOCKING_WAIT: "1"
+  NCCL_DEBUG: "WARN"
+
+# ============================================================================
+# Expected Performance (vs Baseline)
+# ============================================================================
+# | Metric          | Baseline | KOSEM Expected |
+# |-----------------|----------|---------------|
+# | Ko-StrategyQA   | +12.0%   | +30-35%       |
+# | PublicHealthQA  | -5.5%    | +15-20%       |
+# | MrTidyRetrieval | +8.6%    | +18-22%       |
+# | BelebeleRetrieval| +3.3%   | +10-12%       |
+# | Average NDCG@10 | +2.1%    | +18-25%       |
+# ============================================================================
