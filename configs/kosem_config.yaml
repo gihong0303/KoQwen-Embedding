@@ -630,8 +630,8 @@ stage7:
 # Hardware Settings
 # ============================================================================
 hardware:
-  num_gpus: 6
-  gpu_ids: [0, 1, 2, 3, 4, 5]
+  num_gpus: 8
+  gpu_ids: [1, 2, 3, 4, 5, 6, 7, 8]
   gpu_type: "A5000"
   gpu_memory_gb: 24
   distributed_backend: "nccl"

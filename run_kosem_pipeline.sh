@@ -8,8 +8,11 @@ set -e
 
 # Configuration
 CONFIG="configs/kosem_config.yaml"
-NUM_GPUS=6
+NUM_GPUS=8
 MASTER_PORT=29500
+
+# GPU Selection (use GPUs 1-8, skip GPU 0)
+export CUDA_VISIBLE_DEVICES=1,2,3,4,5,6,7,8
 
 # Colors for output
 RED='\033[0;31m'
@@ -96,12 +99,35 @@ print('Morpheme analyzer initialized')
     log_success "Preparation complete!"
 }
 
-# Run a single stage
+# Run Stage 0 (CLSA) - uses separate script
+run_stage0() {
+    print_header "Running Stage 0 - CLSA"
+
+    log_info "Starting Stage 0 (CLSA) training..."
+    log_info "Config: $CONFIG"
+    log_info "GPUs: $NUM_GPUS"
+
+    torchrun \
+        --nproc_per_node=$NUM_GPUS \
+        --master_port=$MASTER_PORT \
+        scripts/stage0_clsa.py \
+        --config $CONFIG
+
+    log_success "Stage 0 completed!"
+}
+
+# Run a single stage (stages 1-7)
 run_stage() {
     local stage=$1
     local prev_stage=$2
 
     print_header "Running $stage"
+
+    # Stage 0 uses separate script
+    if [ "$stage" = "stage0" ]; then
+        run_stage0
+        return
+    fi
 
     # Determine model path
     if [ -z "$prev_stage" ]; then
