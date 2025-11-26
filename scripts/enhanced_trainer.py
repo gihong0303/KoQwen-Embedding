@@ -50,14 +50,41 @@ class EnhancedEmbeddingTrainer(BaseEmbeddingTrainer):
 
                 if source == 'huggingface':
                     # Load from HuggingFace
-                    ds = load_dataset(
-                        ds_name,
-                        split=ds_config.get('split', 'train'),
-                        streaming=False
-                    )
+                    config_name = ds_config.get('config', None)
+                    if config_name:
+                        ds = load_dataset(
+                            ds_name,
+                            config_name,
+                            split=ds_config.get('split', 'train'),
+                            streaming=False
+                        )
+                    else:
+                        ds = load_dataset(
+                            ds_name,
+                            split=ds_config.get('split', 'train'),
+                            streaming=False
+                        )
 
                     if max_samples:
                         ds = ds.select(range(min(max_samples, len(ds))))
+
+                    # Convert to 'text' column if not exists
+                    if 'text' not in ds.column_names:
+                        # Handle NLI datasets (premise + hypothesis)
+                        if 'premise' in ds.column_names and 'hypothesis' in ds.column_names:
+                            ds = ds.map(
+                                lambda x: {'text': f"{x['premise']} {x['hypothesis']}"},
+                                remove_columns=[c for c in ds.column_names if c != 'text'],
+                                num_proc=4
+                            )
+                            self.log(f"       → Converted NLI format to text")
+                        # Handle other common formats
+                        elif 'sentence' in ds.column_names:
+                            ds = ds.rename_column('sentence', 'text')
+                        elif 'content' in ds.column_names:
+                            ds = ds.rename_column('content', 'text')
+                        elif 'question' in ds.column_names:
+                            ds = ds.rename_column('question', 'text')
 
                 elif source == 'local':
                     # Load from local path
@@ -137,7 +164,21 @@ class EnhancedEmbeddingTrainer(BaseEmbeddingTrainer):
 
         # Continue with standard data loader setup
         def collate_fn(examples):
-            texts = [ex['text'] for ex in examples]
+            # Extract texts with validation
+            texts = []
+            for ex in examples:
+                text = ex.get('text', '')
+                # Ensure text is a valid string
+                if text is None:
+                    text = ''
+                elif not isinstance(text, str):
+                    text = str(text)
+                # Filter out empty strings
+                if text.strip():
+                    texts.append(text)
+                else:
+                    texts.append('[EMPTY]')  # Placeholder for empty texts
+
             encodings = self.tokenizer(
                 texts,
                 max_length=self.stage_config['training']['max_length'],

@@ -19,7 +19,7 @@ echo "Step 1: Extracting Bilingual Dictionary..."
 echo "-------------------------------------------"
 
 python scripts/stage0_clsa/bilingual_dictionary.py \
-    --base_model "Qwen/Qwen2.5-0.5B" \
+    --base_model "Qwen/Qwen3-Embedding-0.6B" \
     --korean_tokenizer "outputs/koqwen-expanded" \
     --vocab_diff_path "tokenizer/vocab_diff.json" \
     --output "outputs/bilingual_dictionary.json" \
@@ -38,7 +38,7 @@ echo "Step 2: Computing Token Difficulty Scores..."
 echo "---------------------------------------------"
 
 python scripts/stage0_clsa/token_difficulty.py \
-    --base_tokenizer "Qwen/Qwen2.5-0.5B" \
+    --base_tokenizer "Qwen/Qwen3-Embedding-0.6B" \
     --korean_tokenizer "outputs/koqwen-expanded" \
     --vocab_diff_path "tokenizer/vocab_diff.json" \
     --dataset "HAERAE-HUB/KOREAN-WEBTEXT" \

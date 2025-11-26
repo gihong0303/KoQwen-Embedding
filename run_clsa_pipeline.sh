@@ -12,8 +12,8 @@ echo "  7-Stage Enhanced Training for Korean Embedding"
 echo "============================================================================"
 echo ""
 
-# Configuration
-export CUDA_VISIBLE_DEVICES="4,5,6,7,8,9"
+# Configuration - 8 GPUs (1-8), excluding 0 and 9
+export CUDA_VISIBLE_DEVICES="1,2,3,4,5,6,7,8"
 export TOKENIZERS_PARALLELISM="false"
 export NCCL_IB_DISABLE=1
 export NCCL_P2P_DISABLE=1
@@ -23,7 +23,7 @@ export CUDA_DEVICE_MAX_CONNECTIONS=1
 export NCCL_DEBUG=WARN
 export NCCL_SOCKET_FAMILY=AF_INET
 
-NUM_GPUS=6
+NUM_GPUS=8
 CONFIG="configs/pipeline_config_clsa.yaml"
 
 echo "Configuration:"

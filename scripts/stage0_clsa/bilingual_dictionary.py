@@ -128,15 +128,17 @@ class BilingualDictionaryExtractor:
         self,
         new_korean_tokens: List[str],
         top_k: int = 5,
-        min_similarity: float = 0.3
+        min_similarity: float = 0.3,
+        batch_size: int = 512
     ) -> Dict[str, List[Tuple[str, str, float]]]:
         """
-        Find English/Chinese anchor tokens for each Korean token
+        Find English/Chinese anchor tokens for each Korean token (BATCH OPTIMIZED)
 
         Args:
             new_korean_tokens: List of new Korean tokens to map
             top_k: Number of anchors per language
             min_similarity: Minimum cosine similarity threshold
+            batch_size: Batch size for GPU processing
 
         Returns:
             {
@@ -147,7 +149,7 @@ class BilingualDictionaryExtractor:
                 ]
             }
         """
-        logger.info(f"Finding cross-lingual anchors for {len(new_korean_tokens)} tokens...")
+        logger.info(f"Finding cross-lingual anchors for {len(new_korean_tokens)} tokens (BATCH MODE)...")
 
         # Get language tokens from base vocab
         lang_tokens = self.extract_language_tokens()
@@ -160,62 +162,103 @@ class BilingualDictionaryExtractor:
         logger.info(f"  English: {len(en_token_list):,} tokens")
         logger.info(f"  Chinese: {len(zh_token_list):,} tokens")
 
-        # English embeddings
-        en_token_ids = [self.base_tokenizer.convert_tokens_to_ids(t) for t in en_token_list]
-        en_embeddings = torch.stack([
-            self.get_token_embedding(tid) for tid in tqdm(en_token_ids, desc="English embeddings")
-        ])
-        en_embeddings = torch.nn.functional.normalize(en_embeddings, p=2, dim=1)
+        # Get all embeddings from model at once (GPU optimized)
+        embed_weight = self.model.get_input_embeddings().weight
 
-        # Chinese embeddings
-        zh_token_ids = [self.base_tokenizer.convert_tokens_to_ids(t) for t in zh_token_list]
-        zh_embeddings = torch.stack([
-            self.get_token_embedding(tid) for tid in tqdm(zh_token_ids, desc="Chinese embeddings")
-        ])
-        zh_embeddings = torch.nn.functional.normalize(zh_embeddings, p=2, dim=1)
+        # English embeddings (batch)
+        en_token_ids = torch.tensor([self.base_tokenizer.convert_tokens_to_ids(t) for t in en_token_list], device=self.device)
+        with torch.no_grad():
+            en_embeddings = embed_weight[en_token_ids].float()
+            en_embeddings = torch.nn.functional.normalize(en_embeddings, p=2, dim=1)
+        logger.info(f"  English embeddings ready: {en_embeddings.shape}")
 
-        # Find anchors for each Korean token
+        # Chinese embeddings (batch, handle empty case)
+        zh_embeddings = None
+        if zh_token_list:
+            zh_token_ids = torch.tensor([self.base_tokenizer.convert_tokens_to_ids(t) for t in zh_token_list], device=self.device)
+            with torch.no_grad():
+                zh_embeddings = embed_weight[zh_token_ids].float()
+                zh_embeddings = torch.nn.functional.normalize(zh_embeddings, p=2, dim=1)
+            logger.info(f"  Chinese embeddings ready: {zh_embeddings.shape}")
+        else:
+            logger.info("  No Chinese tokens found in base vocabulary, skipping Chinese anchors")
+
+        # Precompute Korean token embeddings in batches
+        logger.info(f"Computing Korean token embeddings in batches of {batch_size}...")
+
+        base_vocab = self.base_tokenizer.get_vocab()
         anchors_map = {}
 
-        for ko_token in tqdm(new_korean_tokens, desc="Finding anchors"):
-            # Get Korean token embedding from base tokenizer
-            # (use subword averaging if not in base vocab)
-            if ko_token in self.base_tokenizer.get_vocab():
-                ko_id = self.base_tokenizer.convert_tokens_to_ids(ko_token)
-                ko_emb = self.get_token_embedding(ko_id)
-            else:
-                # Subword averaging
-                subtokens = self.base_tokenizer.tokenize(ko_token)
-                if not subtokens:
-                    continue
-                subtoken_ids = self.base_tokenizer.convert_tokens_to_ids(subtokens)
-                ko_emb = torch.stack([
-                    self.get_token_embedding(sid) for sid in subtoken_ids
-                ]).mean(dim=0)
+        # Process in batches
+        num_batches = (len(new_korean_tokens) + batch_size - 1) // batch_size
 
-            ko_emb = torch.nn.functional.normalize(ko_emb.unsqueeze(0), p=2, dim=1)
+        for batch_idx in tqdm(range(num_batches), desc="Processing batches"):
+            start_idx = batch_idx * batch_size
+            end_idx = min(start_idx + batch_size, len(new_korean_tokens))
+            batch_tokens = new_korean_tokens[start_idx:end_idx]
 
-            # Find top-k English anchors
-            en_similarities = (ko_emb @ en_embeddings.T).squeeze()
-            en_top_k = torch.topk(en_similarities, k=top_k)
+            # Compute embeddings for this batch
+            batch_embeddings = []
+            valid_tokens = []
 
-            # Find top-k Chinese anchors
-            zh_similarities = (ko_emb @ zh_embeddings.T).squeeze()
-            zh_top_k = torch.topk(zh_similarities, k=top_k)
+            for ko_token in batch_tokens:
+                if ko_token in base_vocab:
+                    ko_id = self.base_tokenizer.convert_tokens_to_ids(ko_token)
+                    with torch.no_grad():
+                        ko_emb = embed_weight[ko_id].float()
+                else:
+                    # Subword averaging
+                    subtokens = self.base_tokenizer.tokenize(ko_token)
+                    if not subtokens:
+                        continue
+                    subtoken_ids = self.base_tokenizer.convert_tokens_to_ids(subtokens)
+                    subtoken_ids = torch.tensor(subtoken_ids, device=self.device)
+                    with torch.no_grad():
+                        ko_emb = embed_weight[subtoken_ids].float().mean(dim=0)
 
-            # Collect anchors above threshold
-            anchors = []
+                batch_embeddings.append(ko_emb)
+                valid_tokens.append(ko_token)
 
-            for idx, sim in zip(en_top_k.indices, en_top_k.values):
-                if sim.item() >= min_similarity:
-                    anchors.append((en_token_list[idx], 'en', sim.item()))
+            if not batch_embeddings:
+                continue
 
-            for idx, sim in zip(zh_top_k.indices, zh_top_k.values):
-                if sim.item() >= min_similarity:
-                    anchors.append((zh_token_list[idx], 'zh', sim.item()))
+            # Stack and normalize
+            batch_embeddings = torch.stack(batch_embeddings)  # [batch, dim]
+            batch_embeddings = torch.nn.functional.normalize(batch_embeddings, p=2, dim=1)
 
-            if anchors:
-                anchors_map[ko_token] = anchors
+            # Compute similarities with English (batch matrix multiplication)
+            with torch.no_grad():
+                en_similarities = batch_embeddings @ en_embeddings.T  # [batch, en_vocab]
+                en_topk_values, en_topk_indices = torch.topk(en_similarities, k=min(top_k, len(en_token_list)), dim=1)
+
+            # Compute similarities with Chinese (if available)
+            zh_topk_values, zh_topk_indices = None, None
+            if zh_embeddings is not None:
+                with torch.no_grad():
+                    zh_similarities = batch_embeddings @ zh_embeddings.T
+                    zh_topk_values, zh_topk_indices = torch.topk(zh_similarities, k=min(top_k, len(zh_token_list)), dim=1)
+
+            # Collect results
+            for i, ko_token in enumerate(valid_tokens):
+                anchors = []
+
+                # English anchors
+                for j in range(en_topk_values.shape[1]):
+                    sim = en_topk_values[i, j].item()
+                    if sim >= min_similarity:
+                        idx = en_topk_indices[i, j].item()
+                        anchors.append((en_token_list[idx], 'en', sim))
+
+                # Chinese anchors
+                if zh_topk_values is not None:
+                    for j in range(zh_topk_values.shape[1]):
+                        sim = zh_topk_values[i, j].item()
+                        if sim >= min_similarity:
+                            idx = zh_topk_indices[i, j].item()
+                            anchors.append((zh_token_list[idx], 'zh', sim))
+
+                if anchors:
+                    anchors_map[ko_token] = anchors
 
         logger.info(f"Found anchors for {len(anchors_map):,}/{len(new_korean_tokens):,} tokens")
 
@@ -309,7 +352,17 @@ def main():
     with open(args.vocab_diff_path, 'r', encoding='utf-8') as f:
         vocab_diff = json.load(f)
 
-    new_korean_tokens = list(vocab_diff.keys())[:args.max_tokens]
+    # Extract token list from vocab_diff
+    if isinstance(vocab_diff, dict):
+        if "safe_add_tokens" in vocab_diff:
+            new_korean_tokens = vocab_diff["safe_add_tokens"][:args.max_tokens]
+        elif "tokens" in vocab_diff:
+            new_korean_tokens = vocab_diff["tokens"][:args.max_tokens]
+        else:
+            new_korean_tokens = [k for k in vocab_diff.keys() if k != "statistics"][:args.max_tokens]
+    else:
+        new_korean_tokens = vocab_diff[:args.max_tokens]
+
     logger.info(f"Processing {len(new_korean_tokens):,} new Korean tokens")
 
     # Extract bilingual dictionary

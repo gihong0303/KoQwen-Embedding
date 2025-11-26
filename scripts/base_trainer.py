@@ -162,6 +162,11 @@ class BaseEmbeddingTrainer:
 
         self.model = self.model.to(self.device)
 
+        # Enable gradient checkpointing if configured
+        if self.stage_config.get('optimization', {}).get('gradient_checkpointing', False):
+            self.model.gradient_checkpointing_enable()
+            self.log(f"\n✓ Gradient checkpointing enabled")
+
         # Freeze all
         for param in self.model.parameters():
             param.requires_grad = False
@@ -395,6 +400,23 @@ class BaseEmbeddingTrainer:
 
         return total_loss / len(self.train_dataloader)
 
+    def _safe_save_model(self, model_to_save, save_dir):
+        """Save model without triggering DeepSpeed import"""
+        from pathlib import Path
+        save_dir = Path(save_dir)
+
+        # Save config
+        model_to_save.config.save_pretrained(save_dir)
+
+        # Save model weights directly
+        try:
+            from safetensors.torch import save_file
+            state_dict = model_to_save.state_dict()
+            cpu_state_dict = {k: v.cpu().contiguous() for k, v in state_dict.items()}
+            save_file(cpu_state_dict, save_dir / "model.safetensors")
+        except ImportError:
+            torch.save(model_to_save.state_dict(), save_dir / "pytorch_model.bin")
+
     def save_checkpoint(self, epoch: int, step: int, loss: float):
         if not is_main_process():
             return
@@ -403,13 +425,7 @@ class BaseEmbeddingTrainer:
         ckpt_dir.mkdir(parents=True, exist_ok=True)
 
         model_to_save = self.model.module if isinstance(self.model, DDP) else self.model
-
-        if hasattr(model_to_save, 'save_pretrained'):
-            model_to_save.save_pretrained(ckpt_dir)
-        else:
-            # LoRA model
-            model_to_save.save_pretrained(ckpt_dir)
-
+        self._safe_save_model(model_to_save, ckpt_dir)
         self.tokenizer.save_pretrained(ckpt_dir)
 
         import json
@@ -446,12 +462,7 @@ class BaseEmbeddingTrainer:
             final_dir.mkdir(parents=True, exist_ok=True)
 
             model_to_save = self.model.module if isinstance(self.model, DDP) else self.model
-
-            if hasattr(model_to_save, 'save_pretrained'):
-                model_to_save.save_pretrained(final_dir)
-            else:
-                model_to_save.save_pretrained(final_dir)
-
+            self._safe_save_model(model_to_save, final_dir)
             self.tokenizer.save_pretrained(final_dir)
 
             self.log("\n" + "=" * 80)

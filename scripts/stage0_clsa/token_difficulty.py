@@ -49,7 +49,17 @@ class TokenDifficultyScorer:
         with open(vocab_diff_path, 'r', encoding='utf-8') as f:
             self.vocab_diff = json.load(f)
 
-        self.new_korean_tokens = list(self.vocab_diff.keys())
+        # Extract token list from vocab_diff
+        if isinstance(self.vocab_diff, dict):
+            if "safe_add_tokens" in self.vocab_diff:
+                self.new_korean_tokens = self.vocab_diff["safe_add_tokens"]
+            elif "tokens" in self.vocab_diff:
+                self.new_korean_tokens = self.vocab_diff["tokens"]
+            else:
+                self.new_korean_tokens = [k for k in self.vocab_diff.keys() if k != "statistics"]
+        else:
+            self.new_korean_tokens = self.vocab_diff
+
         logger.info(f"Loaded {len(self.new_korean_tokens):,} new Korean tokens")
 
     def compute_subword_complexity(self, token: str) -> float:

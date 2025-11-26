@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
 """Stage 3: Hard Tokens (Curriculum Learning)"""
 import os
+import sys
 import argparse
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+
 from transformers import set_seed
-from enhanced_trainer import EnhancedEmbeddingTrainer
-from base_trainer import cleanup_distributed
+from scripts.enhanced_trainer import EnhancedEmbeddingTrainer
+from scripts.base_trainer import cleanup_distributed
 
 def main():
     parser = argparse.ArgumentParser()

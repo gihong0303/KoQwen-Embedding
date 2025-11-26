@@ -206,8 +206,10 @@ class CLSALoss(nn.Module):
         weights_normalized = weights_normalized / weights_sum  # [B, N]
 
         # Weighted average of anchors
+        # Ensure dtype consistency for bmm operation
+        weights_for_bmm = weights_normalized.unsqueeze(1).to(anchor_emb_norm.dtype)  # [B, 1, N]
         anchor_center = torch.bmm(
-            weights_normalized.unsqueeze(1),  # [B, 1, N]
+            weights_for_bmm,                   # [B, 1, N]
             anchor_emb_norm                    # [B, N, D]
         ).squeeze(1)  # [B, D]
 
@@ -519,7 +521,22 @@ class CLSATrainer:
         final_dir.mkdir(parents=True, exist_ok=True)
 
         model_to_save = self.model.module if isinstance(self.model, DDP) else self.model
-        model_to_save.save_pretrained(final_dir)
+
+        # Save model without triggering DeepSpeed import
+        # First save config
+        model_to_save.config.save_pretrained(final_dir)
+
+        # Save model weights directly with safetensors
+        try:
+            from safetensors.torch import save_file
+            state_dict = model_to_save.state_dict()
+            # Convert to CPU and proper format
+            cpu_state_dict = {k: v.cpu().contiguous() for k, v in state_dict.items()}
+            save_file(cpu_state_dict, final_dir / "model.safetensors")
+        except ImportError:
+            # Fallback to torch.save if safetensors not available
+            torch.save(model_to_save.state_dict(), final_dir / "pytorch_model.bin")
+
         self.korean_tokenizer.save_pretrained(final_dir)
 
         self.log(f"💾 Checkpoint saved: {final_dir}")
