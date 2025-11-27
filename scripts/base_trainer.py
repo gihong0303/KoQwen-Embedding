@@ -40,27 +40,37 @@ LocalDatasetLoader = local_dataset_module.LocalDatasetLoader
 
 
 def setup_distributed():
-    """DDP 초기화"""
+    """DDP initialization with robust error handling"""
     if 'RANK' in os.environ and 'WORLD_SIZE' in os.environ:
         rank = int(os.environ['RANK'])
         world_size = int(os.environ['WORLD_SIZE'])
         local_rank = int(os.environ.get('LOCAL_RANK', 0))
 
-        dist.init_process_group(
-            backend='nccl',
-            init_method='env://',
-            timeout=timedelta(minutes=10)
-        )
+        # Initialize process group with longer timeout
+        if not dist.is_initialized():
+            dist.init_process_group(
+                backend='nccl',
+                init_method='env://',
+                timeout=timedelta(minutes=30),
+                world_size=world_size,
+                rank=rank
+            )
 
         torch.cuda.set_device(local_rank)
 
+        # Sync all processes before proceeding
+        dist.barrier()
+
         if rank == 0:
             visible = os.environ.get('CUDA_VISIBLE_DEVICES', '')
-            print(f"[DDP] world_size={world_size}, local_rank={local_rank}, "
+            print(f"[DDP] Initialized: world_size={world_size}, local_rank={local_rank}, "
                   f"CUDA_VISIBLE_DEVICES='{visible}'", flush=True)
 
         return rank, world_size, local_rank
     else:
+        # Single GPU mode
+        if torch.cuda.is_available():
+            torch.cuda.set_device(0)
         return 0, 1, 0
 
 

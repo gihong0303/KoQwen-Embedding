@@ -14,8 +14,9 @@ from scripts.base_trainer import cleanup_distributed
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", type=str, default="configs/pipeline_config_clsa.yaml")
-    parser.add_argument("--model_path", type=str, default="checkpoints/stage1_curriculum/final")
+    parser.add_argument("--config", type=str, default="configs/pipeline_config.yaml")
+    parser.add_argument("--model_path", type=str, required=True,
+                        help="Path to Stage 1 model")
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 
