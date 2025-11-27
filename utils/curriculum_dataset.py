@@ -48,9 +48,15 @@ class CurriculumDatasetWrapper:
         self.curriculum_mode = curriculum_mode
         self.priority_weight = priority_weight
 
-        # Load difficulty categories
-        with open(difficulty_categories_path, 'r', encoding='utf-8') as f:
-            self.categories = json.load(f)
+        # Load difficulty categories (graceful fallback if file not found)
+        difficulty_path = Path(difficulty_categories_path)
+        if difficulty_path.exists():
+            with open(difficulty_path, 'r', encoding='utf-8') as f:
+                self.categories = json.load(f)
+        else:
+            logger.warning(f"Token categories file not found: {difficulty_categories_path}")
+            logger.warning("Curriculum learning disabled - using uniform sampling")
+            self.categories = {'easy': [], 'medium': [], 'hard': []}
 
         # Build token sets
         self.easy_tokens = set(self.categories.get('easy', []))

@@ -411,9 +411,18 @@ class BaseEmbeddingTrainer:
         return total_loss / len(self.train_dataloader)
 
     def _safe_save_model(self, model_to_save, save_dir):
-        """Save model without triggering DeepSpeed import"""
+        """Save model - handles both regular and LoRA models"""
         from pathlib import Path
         save_dir = Path(save_dir)
+
+        # Check if this is a PEFT/LoRA model
+        is_peft_model = hasattr(model_to_save, 'merge_and_unload')
+
+        if is_peft_model:
+            self.log("  Merging LoRA adapters into base model...")
+            # Merge LoRA weights into base model
+            merged_model = model_to_save.merge_and_unload()
+            model_to_save = merged_model
 
         # Save config
         model_to_save.config.save_pretrained(save_dir)
@@ -426,6 +435,9 @@ class BaseEmbeddingTrainer:
             save_file(cpu_state_dict, save_dir / "model.safetensors")
         except ImportError:
             torch.save(model_to_save.state_dict(), save_dir / "pytorch_model.bin")
+
+        if is_peft_model:
+            self.log("  LoRA adapters merged and saved successfully")
 
     def save_checkpoint(self, epoch: int, step: int, loss: float):
         if not is_main_process():

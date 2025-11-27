@@ -47,6 +47,7 @@ MASTER_PORT=29500
 
 STAGE=""
 EVAL_ONLY=false
+PREPARE_ONLY=false
 RESUME_FROM=""
 
 while [[ $# -gt 0 ]]; do
@@ -57,6 +58,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --eval)
             EVAL_ONLY=true
+            shift
+            ;;
+        --prepare)
+            PREPARE_ONLY=true
             shift
             ;;
         --resume)
@@ -73,6 +78,7 @@ while [[ $# -gt 0 ]]; do
             echo "Options:"
             echo "  --stage N     Run only stage N (1-5)"
             echo "  --eval        Run evaluation only"
+            echo "  --prepare     Run preparation only (token difficulty)"
             echo "  --resume N    Resume from stage N"
             echo "  --config F    Use config file F"
             echo "  --help        Show this help"
@@ -153,6 +159,33 @@ echo "  - Config: $CONFIG"
 echo "  - Mode: ${STAGE:-all stages}"
 echo ""
 
+# ============================================================================
+# Preparation: Token Difficulty for Curriculum Learning
+# ============================================================================
+
+prepare_curriculum() {
+    log_header "PREPARATION: Token Difficulty Calculation"
+
+    if [ -f "outputs/token_difficulty/token_categories.json" ]; then
+        log_info "Token categories already exist. Skipping preparation."
+        return 0
+    fi
+
+    log_info "Calculating token difficulty scores..."
+
+    python scripts/prepare_curriculum.py \
+        --tokenizer_path "outputs/koqwen-expanded" \
+        --output_dir "outputs/token_difficulty"
+
+    log_info "Token difficulty preparation complete!"
+}
+
+# Prepare only mode
+if [ "$PREPARE_ONLY" = true ]; then
+    prepare_curriculum
+    exit 0
+fi
+
 # Evaluation only mode
 if [ "$EVAL_ONLY" = true ]; then
     FINAL_MODEL="checkpoints/stage5/final"
@@ -171,6 +204,11 @@ fi
 START_STAGE=1
 if [ -n "$RESUME_FROM" ]; then
     START_STAGE=$RESUME_FROM
+fi
+
+# Run preparation if needed (only for stages 1-3 which use curriculum)
+if [ -z "$STAGE" ] || [ "$STAGE" -le 3 ]; then
+    prepare_curriculum
 fi
 
 # Run specific stage or all stages
