@@ -43,13 +43,14 @@ except ImportError:
 
 
 # Korean Retrieval Tasks Configuration
+# 6 Main Tasks for KAVE Evaluation
 KOREAN_RETRIEVAL_TASKS = [
     {"task": "Ko-StrategyQA", "subset": "default"},
     {"task": "AutoRAGRetrieval", "subset": "default"},
-    {"task": "BelebeleRetrieval", "subset": "kor_Hang-kor_Hang"},
-    {"task": "BelebeleRetrieval", "subset": "kor_Hang-eng_Latn"},
-    {"task": "BelebeleRetrieval", "subset": "eng_Latn-kor_Hang"},
+    {"task": "MIRACLRetrieval", "subset": "ko"},
     {"task": "PublicHealthQA", "subset": "korean"},
+    {"task": "BelebeleRetrieval", "subset": "kor_Hang-kor_Hang"},
+    {"task": "MrTidyRetrieval", "subset": "korean"},
 ]
 
 

@@ -1,0 +1,317 @@
+# ============================================================================
+# KAVE Pipeline Configuration
+# Korean Adaptive Vocabulary Expansion Framework
+# ============================================================================
+#
+# Based on proven methods from:
+# - EEVE (Kim et al., 2024): Subword averaging initialization
+# - FOCUS (Dobler & de Melo, 2023): Semantic similarity mapping
+# - Thunder-LLM (2024): Efficient training strategies
+# - ULMFiT (Howard & Ruder, 2018): Progressive unfreezing
+#
+# Key Innovation: Preserve retrieval performance during vocabulary expansion
+# ============================================================================
+
+# Model Configuration
+model:
+  base_model: "Qwen/Qwen3-Embedding-0.6B"
+  tokenizer_path: "outputs/koqwen-expanded"
+  initialized_model_path: "outputs/kave-initialized"
+  original_vocab_size: 151669
+  hidden_size: 896
+  max_length: 512
+
+# Hardware (GPU 1-8)
+hardware:
+  num_gpus: 8
+  gpu_ids: [1, 2, 3, 4, 5, 6, 7, 8]
+  mixed_precision: "bf16"
+  gradient_checkpointing: true
+
+# KAVE Framework Settings
+kave:
+  # WSA (Weighted Semantic Averaging) - Initialization
+  wsa:
+    enabled: true
+    temperature: 0.1
+    top_k: 10
+    use_semantic_weights: true
+
+  # CTA (Contextual Token Alignment) - Training Loss
+  cta:
+    mlm_weight: 1.0
+    contrastive_weight: 0.5
+    alignment_weight: 0.3
+    mlm_mask_prob: 0.15
+    new_token_mask_prob: 0.5
+
+  # PEU (Progressive Embedding Unfreezing) - Gradient Control
+  peu:
+    enabled: true
+    freeze_old_embeddings: true
+    unfreeze_schedule: "linear"  # linear, exponential, step
+    unfreeze_start_epoch: 3
+    unfreeze_end_epoch: 10
+    similarity_threshold: 0.7
+
+  # RAT (Retrieval-Aware Training) - Auxiliary Loss
+  rat:
+    enabled: true
+    weight: 0.2
+    hard_negative_ratio: 0.3
+    temperature: 0.05
+
+# ============================================================================
+# Stage 1: Token Initialization with WSA
+# ============================================================================
+# No training, just initialization using Weighted Semantic Averaging
+stage1_init:
+  enabled: true
+  output_path: "outputs/kave-initialized"
+  verify_embeddings: true
+
+# ============================================================================
+# Stage 2: Easy Token Learning (Curriculum Phase 1)
+# ============================================================================
+# Focus: Simple tokens (1-2 subwords, short, common patterns)
+# Loss: Heavy MLM to learn basic token representations
+stage2_easy:
+  enabled: true
+
+  data:
+    sources:
+      - path: "data/korean_wiki_filtered.jsonl"
+        weight: 1.0
+      - path: "data/korean_news.jsonl"
+        weight: 0.5
+    token_filter: "easy"  # Only sentences with easy tokens
+    max_samples: 500000
+
+  training:
+    num_epochs: 1
+    batch_size: 48
+    gradient_accumulation_steps: 2
+    effective_batch_size: 768  # 48 * 2 * 8 GPUs
+    learning_rate: 5e-5
+    warmup_ratio: 0.1
+    weight_decay: 0.01
+    max_grad_norm: 1.0
+
+  loss_weights:
+    mlm: 1.0
+    contrastive: 0.2
+    alignment: 0.5
+    retrieval: 0.1
+
+  embedding:
+    freeze_old: true
+    freeze_transformer: false
+
+  checkpoint:
+    save_dir: "checkpoints/kave_stage2"
+    save_steps: 1000
+
+# ============================================================================
+# Stage 3: Medium Token Learning (Curriculum Phase 2)
+# ============================================================================
+# Focus: Medium difficulty tokens
+# Loss: Balanced MLM + Contrastive
+stage3_medium:
+  enabled: true
+
+  data:
+    sources:
+      - path: "data/korean_wiki_filtered.jsonl"
+        weight: 1.0
+      - path: "data/korean_common_crawl.jsonl"
+        weight: 0.8
+    token_filter: "easy,medium"  # Include easy for reinforcement
+    max_samples: 800000
+
+  training:
+    num_epochs: 1
+    batch_size: 48
+    gradient_accumulation_steps: 2
+    learning_rate: 3e-5
+    warmup_ratio: 0.05
+
+  loss_weights:
+    mlm: 0.8
+    contrastive: 0.5
+    alignment: 0.3
+    retrieval: 0.2
+
+  embedding:
+    freeze_old: true  # Still frozen
+
+  checkpoint:
+    save_dir: "checkpoints/kave_stage3"
+
+# ============================================================================
+# Stage 4: Hard Token Learning (Curriculum Phase 3)
+# ============================================================================
+# Focus: Complex tokens (many subwords, long, rare patterns)
+# Loss: Full KAVE with emphasis on contrastive
+stage4_hard:
+  enabled: true
+
+  data:
+    sources:
+      - path: "data/korean_wiki_filtered.jsonl"
+        weight: 1.0
+      - path: "data/korean_common_crawl.jsonl"
+        weight: 1.0
+      - path: "data/korean_specialized.jsonl"  # Domain-specific
+        weight: 0.5
+    token_filter: "all"  # All tokens
+    max_samples: 1000000
+
+  training:
+    num_epochs: 2
+    batch_size: 48
+    gradient_accumulation_steps: 2
+    learning_rate: 2e-5
+    warmup_ratio: 0.05
+
+  loss_weights:
+    mlm: 0.6
+    contrastive: 0.6
+    alignment: 0.2
+    retrieval: 0.3
+
+  embedding:
+    freeze_old: true  # Start unfreezing via PEU
+    peu_enabled: true
+
+  checkpoint:
+    save_dir: "checkpoints/kave_stage4"
+
+# ============================================================================
+# Stage 5: Unified Training with Progressive Unfreezing
+# ============================================================================
+# Focus: Integrate new tokens with existing knowledge
+# Loss: Balanced with increasing RAT
+stage5_unify:
+  enabled: true
+
+  data:
+    sources:
+      - path: "data/korean_wiki_filtered.jsonl"
+        weight: 1.0
+      - path: "data/korean_common_crawl.jsonl"
+        weight: 1.0
+      - path: "data/retrieval_pairs.jsonl"  # Query-document pairs
+        weight: 1.5
+    token_filter: "all"
+    max_samples: 1500000
+
+  training:
+    num_epochs: 3
+    batch_size: 48
+    gradient_accumulation_steps: 2
+    learning_rate: 1e-5
+    warmup_ratio: 0.03
+
+  loss_weights:
+    mlm: 0.4
+    contrastive: 0.5
+    alignment: 0.1
+    retrieval: 0.5
+
+  embedding:
+    freeze_old: false  # PEU controls unfreezing
+    peu_enabled: true
+
+  checkpoint:
+    save_dir: "checkpoints/kave_stage5"
+
+# ============================================================================
+# Stage 6: Retrieval Fine-tuning
+# ============================================================================
+# Focus: Optimize for downstream retrieval tasks
+# Loss: RAT dominant
+stage6_retrieval:
+  enabled: true
+
+  data:
+    sources:
+      - path: "data/retrieval_pairs.jsonl"
+        weight: 1.0
+      - path: "data/hard_negatives.jsonl"
+        weight: 1.0
+    max_samples: 500000
+
+  training:
+    num_epochs: 1
+    batch_size: 32
+    gradient_accumulation_steps: 4
+    learning_rate: 5e-6
+    warmup_ratio: 0.1
+
+  loss_weights:
+    mlm: 0.1
+    contrastive: 0.2
+    alignment: 0.0
+    retrieval: 0.8
+
+  embedding:
+    freeze_old: false
+    peu_enabled: false  # Full unfreezing
+
+  checkpoint:
+    save_dir: "checkpoints/kave_stage6"
+
+# ============================================================================
+# Evaluation Configuration
+# ============================================================================
+evaluation:
+  tasks:
+    - "Ko-StrategyQA"
+    - "AutoRAGRetrieval"
+    - "MIRACLRetrieval"
+    - "PublicHealthQA"
+    - "BelebeleRetrieval"
+    - "MrTidyRetrieval"
+
+  batch_size: 64
+  device: "cuda:0"
+  output_dir: "evaluation_results"
+
+  # Baseline comparison
+  compare_models:
+    - "Qwen/Qwen3-Embedding-0.6B"
+
+# ============================================================================
+# Logging and Monitoring
+# ============================================================================
+logging:
+  wandb:
+    enabled: true
+    project: "kave-korean-embedding"
+    entity: null  # Set your wandb entity
+
+  log_interval: 100
+  eval_interval: 1000
+
+  metrics:
+    - "loss"
+    - "mlm_accuracy"
+    - "new_token_accuracy"
+    - "embedding_drift"
+    - "retrieval_score"
+
+# ============================================================================
+# DDP Configuration
+# ============================================================================
+distributed:
+  backend: "nccl"
+  timeout_minutes: 30
+  find_unused_parameters: false
+
+  # NCCL settings for stability
+  nccl:
+    ib_disable: true
+    p2p_disable: false
+    shm_disable: false
+    blocking_wait: true
+    async_error_handling: true
