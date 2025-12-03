@@ -76,18 +76,40 @@ python scripts/evaluate_mteb.py \
 
 ---
 
+## MTEB Evaluation Results
+
+### Korean Retrieval Benchmark (nDCG@10)
+
+| Task | Baseline (Qwen3-Embedding-0.6B) | Trained | Change |
+|------|--------------------------------|---------|--------|
+| AutoRAGRetrieval | 0.7452 | 0.7482 | **+0.40%** |
+| BelebeleRetrieval | 0.6039 | 0.6517 | **+7.93%** |
+| Ko-StrategyQA | 0.5772 | 0.6039 | **+4.62%** |
+| PublicHealthQA | 0.7426 | 0.7543 | **+1.58%** |
+| MIRACLRetrieval | 0.3469 | 0.3198 | -7.81% |
+| MrTidyRetrieval | 0.2803 | 0.2525 | -9.93% |
+| **Average** | **0.5494** | **0.5551** | **+1.04%** |
+
+### Summary
+
+- **4/6 tasks improved**: AutoRAG, Belebele, Ko-StrategyQA, PublicHealthQA
+- **Best improvement**: BelebeleRetrieval (+7.93%)
+- **Overall average**: +1.04% improvement
+
+---
+
 ## MTEB Evaluation Tasks
 
 The model is evaluated on 6 Korean retrieval tasks:
 
-| Task | Subset | Type |
-|------|--------|------|
-| Ko-StrategyQA | default | Retrieval |
-| AutoRAGRetrieval | default | Retrieval |
-| BelebeleRetrieval | kor_Hang-kor_Hang | Retrieval |
-| BelebeleRetrieval | kor_Hang-eng_Latn | Cross-lingual |
-| BelebeleRetrieval | eng_Latn-kor_Hang | Cross-lingual |
-| PublicHealthQA | korean | Retrieval |
+| Task | Type | Description |
+|------|------|-------------|
+| Ko-StrategyQA | Retrieval | Korean strategy QA |
+| AutoRAGRetrieval | Retrieval | Korean RAG benchmark |
+| BelebeleRetrieval | Retrieval | Multilingual reading comprehension |
+| PublicHealthQA | Retrieval | Korean health QA |
+| MIRACLRetrieval | Retrieval | Multilingual retrieval |
+| MrTidyRetrieval | Retrieval | Multilingual retrieval |
 
 ---
 
