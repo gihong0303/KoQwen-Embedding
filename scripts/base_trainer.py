@@ -108,14 +108,26 @@ class BaseEmbeddingTrainer:
         if is_main_process():
             log_dir = PROJECT_ROOT / "logs"
             log_dir.mkdir(parents=True, exist_ok=True)
+
+            # Clear existing handlers and set up fresh logging
+            log_file = log_dir / f'{self.stage_name}.log'
+
+            # Remove all existing handlers from root logger
+            root_logger = logging.getLogger()
+            for handler in root_logger.handlers[:]:
+                root_logger.removeHandler(handler)
+
+            # Configure with force=True to override any existing config
             logging.basicConfig(
                 level=logging.INFO,
                 format='%(asctime)s - %(levelname)s - %(message)s',
                 handlers=[
-                    logging.FileHandler(log_dir / f'{self.stage_name}.log'),
+                    logging.FileHandler(log_file, mode='a'),
                     logging.StreamHandler()
-                ]
+                ],
+                force=True
             )
+            print(f"📝 Logging to: {log_file}")
         self.logger = logging.getLogger(__name__)
 
     def log(self, message):
@@ -491,3 +503,13 @@ class BaseEmbeddingTrainer:
             self.log(f"✅ {self.stage_config['name']} 완료!")
             self.log(f"   Output: {final_dir}")
             self.log("=" * 80)
+
+        # Cleanup DDP
+        if dist.is_initialized():
+            dist.barrier()  # Wait for all processes
+        cleanup_distributed()
+
+        # Clear GPU memory
+        import gc
+        gc.collect()
+        torch.cuda.empty_cache()

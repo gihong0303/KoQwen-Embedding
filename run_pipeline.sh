@@ -134,6 +134,14 @@ run_stage() {
         ${model_path:+--model_path "$model_path"}
 
     log_info "Stage $stage_num completed!"
+
+    # Wait for GPU memory to be released
+    log_info "Waiting for GPU cleanup..."
+    sleep 10
+
+    # Force GPU memory cleanup
+    python -c "import torch; torch.cuda.empty_cache(); print('GPU cache cleared')" 2>/dev/null || true
+    sleep 5
 }
 
 run_evaluation() {

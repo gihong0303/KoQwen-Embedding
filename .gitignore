@@ -17,6 +17,8 @@ ENV/
 # Checkpoints and models (너무 커서 제외)
 checkpoints/
 outputs/
+evaluation_results/
+results/
 *.safetensors
 *.bin
 *.pt

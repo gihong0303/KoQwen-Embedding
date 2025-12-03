@@ -54,6 +54,7 @@ def count_jamo(text: str) -> int:
 
 def calculate_token_difficulty(
     token: str,
+    token_id: int,
     base_tokenizer,
     new_tokenizer
 ) -> Tuple[float, Dict]:
@@ -63,26 +64,33 @@ def calculate_token_difficulty(
     Returns:
         (difficulty_score, detail_dict)
     """
+    # Decode token to get actual text (tokens are stored as byte sequences)
+    try:
+        decoded_token = new_tokenizer.decode([token_id]).strip()
+    except:
+        decoded_token = token
+
     # Skip non-Korean tokens
-    korean_chars = sum(1 for c in token if is_korean(c))
+    korean_chars = sum(1 for c in decoded_token if is_korean(c))
     if korean_chars == 0:
         return 0.0, {'skip': True, 'reason': 'non-korean'}
 
     # 1. Subword complexity (how many pieces in base tokenizer)
-    base_tokens = base_tokenizer.tokenize(token)
+    base_tokens = base_tokenizer.tokenize(decoded_token)
     subword_count = len(base_tokens)
     subword_score = min(subword_count / 5.0, 1.0)  # Normalize to 0-1
 
-    # 2. Character length
-    char_length = len(token.replace('▁', '').replace('Ġ', ''))
+    # 2. Character length (use decoded token)
+    clean_token = decoded_token.strip()
+    char_length = len(clean_token)
     length_score = min(char_length / 10.0, 1.0)  # Normalize to 0-1
 
     # 3. Jamo complexity
-    jamo_count = count_jamo(token)
+    jamo_count = count_jamo(decoded_token)
     jamo_score = min(jamo_count / 15.0, 1.0)  # Normalize to 0-1
 
     # 4. Special character penalty
-    special_chars = sum(1 for c in token if not is_korean(c) and not c.isalnum())
+    special_chars = sum(1 for c in decoded_token if not is_korean(c) and not c.isalnum() and not c.isspace())
     special_score = min(special_chars / 3.0, 1.0)
 
     # Combined difficulty score (weighted average)
@@ -98,7 +106,8 @@ def calculate_token_difficulty(
         'char_length': char_length,
         'jamo_count': jamo_count,
         'special_chars': special_chars,
-        'difficulty': difficulty
+        'difficulty': difficulty,
+        'decoded': decoded_token
     }
 
     return difficulty, details
@@ -152,7 +161,7 @@ def categorize_tokens(
         if token is None:
             continue
 
-        difficulty, details = calculate_token_difficulty(token, base_tokenizer, new_tokenizer)
+        difficulty, details = calculate_token_difficulty(token, token_id, base_tokenizer, new_tokenizer)
 
         if not details.get('skip'):
             token_difficulties.append({

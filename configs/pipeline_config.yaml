@@ -1,6 +1,6 @@
 # ============================================================================
 # Korean Embedding Expansion for Qwen3-Embedding-0.6B
-# 5-Stage Pipeline (Simplified & Optimized)
+# 5-Stage Pipeline (Optimized for RTX A5000 24GB x 8)
 # ============================================================================
 #
 # Stage 1: Easy Tokens (30% easiest) - Curriculum Learning
@@ -47,13 +47,14 @@ stage1:
         max_samples: 300000
       - name: "kakaobrain/kor_nli"
         source: "huggingface"
+        config: "snli"
         split: "train"
         max_samples: 200000
 
   training:
     num_epochs: 2
-    batch_size: 48           # 2x from 24
-    gradient_accumulation_steps: 2
+    batch_size: 32              # RTX A5000 24GB optimized (70-80% VRAM)
+    gradient_accumulation_steps: 3
     max_length: 192
     learning_rate: 3e-4
     weight_decay: 0.01
@@ -100,13 +101,14 @@ stage2:
         max_samples: 300000
       - name: "kakaobrain/kor_nli"
         source: "huggingface"
+        config: "snli"
         split: "train"
         max_samples: 200000
 
   training:
     num_epochs: 2
-    batch_size: 32           # 2x from 16
-    gradient_accumulation_steps: 2
+    batch_size: 32              # RTX A5000 24GB - same as Stage 1 (98% GPU)
+    gradient_accumulation_steps: 3
     max_length: 192
     learning_rate: 2e-4
     weight_decay: 0.01
@@ -150,19 +152,16 @@ stage3:
     mixed:
       - name: "HAERAE-HUB/KOREAN-WEBTEXT"
         source: "huggingface"
-        max_samples: 200000
-      - name: "HAERAE-HUB/KOREAN-SyntheticText"
-        source: "local"
-        local_path: "~/haerae_dataset/KOREAN-SyntheticText"
-        max_samples: 200000
+        max_samples: 400000
       - name: "kakaobrain/kor_nli"
         source: "huggingface"
+        config: "snli"
         split: "train"
         max_samples: 100000
 
   training:
     num_epochs: 2
-    batch_size: 24           # 2x from 12
+    batch_size: 32              # RTX A5000 24GB - same as Stage 1 (98% GPU)
     gradient_accumulation_steps: 3
     max_length: 192
     learning_rate: 1e-4
@@ -202,25 +201,17 @@ stage4:
   dataset:
     mixed:
       - name: "HAERAE-HUB/KOREAN-WEBTEXT"
-        source: "local"
-        local_path: "~/haerae_dataset/KOREAN-WEBTEXT"
-        max_samples: 200000
-      - name: "HAERAE-HUB/KOREAN-SyntheticText"
-        source: "local"
-        local_path: "~/haerae_dataset/KOREAN-SyntheticText"
-        max_samples: 150000
-      - name: "HAERAE-HUB/KoSimpleEval"
-        source: "local"
-        local_path: "~/haerae_dataset/KoSimpleEval"
-        max_samples: 50000
+        source: "huggingface"
+        max_samples: 300000
       - name: "kakaobrain/kor_nli"
         source: "huggingface"
+        config: "snli"
         split: "train"
-        max_samples: 100000
+        max_samples: 200000
 
   training:
     num_epochs: 1
-    batch_size: 24           # 2x from 12
+    batch_size: 32              # RTX A5000 24GB - same as Stage 1 (98% GPU)
     gradient_accumulation_steps: 3
     max_length: 192
     learning_rate: 5e-5
@@ -268,17 +259,17 @@ stage5:
     mixed:
       - name: "kakaobrain/kor_nli"
         source: "huggingface"
+        config: "snli"
         split: "train"
-        max_samples: 300000
-      - name: "HAE-RAE-COT"
-        source: "local"
-        local_path: "~/haerae_dataset/HAE-RAE-COT"
-        max_samples: 200000
+        max_samples: 400000
+      - name: "HAERAE-HUB/KOREAN-WEBTEXT"
+        source: "huggingface"
+        max_samples: 100000
 
   training:
     num_epochs: 1
-    batch_size: 20           # 2x from 10
-    gradient_accumulation_steps: 4
+    batch_size: 28              # RTX A5000 24GB + LoRA (max_length 256, slightly lower)
+    gradient_accumulation_steps: 3
     max_length: 256
     learning_rate: 5e-5
     weight_decay: 0.01
@@ -299,13 +290,13 @@ stage5:
     log_steps: 100
 
 # ============================================================================
-# Hardware Settings (8 GPUs: 1-8)
+# Hardware Settings (8 GPUs: 1-8, RTX A5000 24GB)
 # ============================================================================
 hardware:
   num_gpus: 8
   gpu_ids: [1, 2, 3, 4, 5, 6, 7, 8]
-  gpu_type: "A100"
-  gpu_memory_gb: 80
+  gpu_type: "RTX_A5000"
+  gpu_memory_gb: 24
   distributed_backend: "nccl"
 
 # ============================================================================

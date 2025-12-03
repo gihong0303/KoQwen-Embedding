@@ -54,15 +54,24 @@ KOREAN_RETRIEVAL_TASKS = [
 ]
 
 
-class QwenEmbeddingModel:
+try:
+    from mteb import Encoder
+    MTEB_ENCODER_AVAILABLE = True
+except ImportError:
+    MTEB_ENCODER_AVAILABLE = False
+
+
+class QwenEmbeddingModel(Encoder if MTEB_ENCODER_AVAILABLE else object):
     """
     Wrapper for Qwen3-Embedding model to work with MTEB
+    Inherits from mteb.Encoder for compatibility with new MTEB API
     """
 
     def __init__(self, model_path: str, device: str = "cuda"):
         from transformers import AutoTokenizer, AutoModel
 
         self.device = device
+        self.model_path = model_path
         self.tokenizer = AutoTokenizer.from_pretrained(
             model_path,
             trust_remote_code=True
@@ -108,6 +117,18 @@ class QwenEmbeddingModel:
             all_embeddings.append(embeddings)
 
         return np.vstack(all_embeddings)
+
+    def encode_queries(self, queries: List[str], batch_size: int = 32, **kwargs) -> np.ndarray:
+        """Encode queries (required by MTEB Encoder interface)"""
+        return self.encode(queries, batch_size=batch_size, **kwargs)
+
+    def encode_corpus(self, corpus: List[dict], batch_size: int = 32, **kwargs) -> np.ndarray:
+        """Encode corpus (required by MTEB Encoder interface)"""
+        if isinstance(corpus[0], dict):
+            sentences = [doc.get("text", doc.get("title", "")) for doc in corpus]
+        else:
+            sentences = corpus
+        return self.encode(sentences, batch_size=batch_size, **kwargs)
 
 
 def run_evaluation(
