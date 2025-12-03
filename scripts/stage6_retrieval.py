@@ -207,39 +207,45 @@ class Stage6RetrievalTrainer:
         # Loss function
         retrieval_cfg = self.stage_config.get('retrieval', {})
         loss_type = retrieval_cfg.get('loss_type', 'mnrl')
+        use_cross_gpu = retrieval_cfg.get('use_cross_gpu_negatives', True)
 
         if loss_type == 'supervised':
             self.criterion = SupervisedRetrievalLoss(
                 temperature=retrieval_cfg.get('temperature', 0.05),
                 pooling=retrieval_cfg.get('pooling', 'mean'),
-                use_hard_negatives=retrieval_cfg.get('use_hard_negatives', True)
+                use_hard_negatives=retrieval_cfg.get('use_hard_negatives', True),
+                use_cross_gpu_negatives=use_cross_gpu
             )
         else:  # mnrl (Multiple Negatives Ranking Loss)
             self.criterion = MultipleNegativesRankingLoss(
                 temperature=retrieval_cfg.get('temperature', 0.05),
-                pooling=retrieval_cfg.get('pooling', 'mean')
+                pooling=retrieval_cfg.get('pooling', 'mean'),
+                use_cross_gpu_negatives=use_cross_gpu
             )
 
-        self.log(f"\n✓ Loss: {loss_type} (temperature={retrieval_cfg.get('temperature', 0.05)})")
+        self.log(f"\n✓ Loss: {loss_type} (temperature={retrieval_cfg.get('temperature', 0.05)}, cross_gpu={use_cross_gpu})")
 
     def prepare_data(self):
         self.log("\n" + "=" * 80)
-        self.log("Data Preparation: MIRACL + KorNLI")
+        self.log("Data Preparation: MIRACL + mMARCO + KorNLI")
         self.log("=" * 80)
 
         dataset_cfg = self.stage_config.get('dataset', {})
 
-        # Load combined dataset
+        # Load combined dataset with expanded data sources
         miracl_samples = dataset_cfg.get('miracl_samples', 50000)
+        mmarco_samples = dataset_cfg.get('mmarco_samples', 100000)
         kornli_samples = dataset_cfg.get('kornli_samples', 100000)
 
         self.log(f"\n🗂️  Loading datasets:")
         self.log(f"   • MIRACL Korean: {miracl_samples:,} samples")
+        self.log(f"   • mMARCO Korean: {mmarco_samples:,} samples")
         self.log(f"   • KorNLI: {kornli_samples:,} samples")
 
         try:
             dataset = CombinedRetrievalDataset(
                 miracl_samples=miracl_samples,
+                mmarco_samples=mmarco_samples,
                 kornli_samples=kornli_samples,
                 include_hard_negatives=dataset_cfg.get('include_hard_negatives', True)
             )
@@ -336,12 +342,15 @@ class Stage6RetrievalTrainer:
             # Move to device
             batch = {k: v.to(self.device, non_blocking=True) for k, v in batch.items()}
 
-            model_unwrapped = self.model.module if isinstance(self.model, DDP) else self.model
+            # IMPORTANT: Pass DDP-wrapped model to loss function for proper gradient sync
+            # DO NOT use model.module here - it breaks DDP gradient synchronization
+            # The loss function will handle the forward pass through the DDP wrapper
+            model_for_forward = self.model
 
             # Forward pass with retrieval loss
             if "neg_input_ids" in batch:
                 loss, metrics = self.criterion(
-                    model_unwrapped,
+                    model_for_forward,
                     query_input_ids=batch['query_input_ids'],
                     query_attention_mask=batch['query_attention_mask'],
                     pos_input_ids=batch['pos_input_ids'],
@@ -351,7 +360,7 @@ class Stage6RetrievalTrainer:
                 )
             else:
                 loss, metrics = self.criterion(
-                    model_unwrapped,
+                    model_for_forward,
                     query_input_ids=batch['query_input_ids'],
                     query_attention_mask=batch['query_attention_mask'],
                     pos_input_ids=batch['pos_input_ids'],
@@ -412,7 +421,14 @@ class Stage6RetrievalTrainer:
             self.log("  LoRA adapters merged and saved successfully")
 
     def save_checkpoint(self, epoch: int, step: int, loss: float):
+        # Barrier: Wait for all GPUs to reach this point before saving
+        if dist.is_initialized():
+            dist.barrier()
+
         if not is_main_process():
+            # Non-main processes wait at barrier after save
+            if dist.is_initialized():
+                dist.barrier()
             return
 
         ckpt_dir = PROJECT_ROOT / self.stage_config['checkpoint']['output_dir'] / f"step_{step}"
@@ -426,6 +442,10 @@ class Stage6RetrievalTrainer:
             json.dump({'epoch': epoch, 'step': step, 'loss': loss}, f, indent=2)
 
         self.log(f"💾 Checkpoint: {ckpt_dir}")
+
+        # Barrier: Signal other GPUs that save is complete
+        if dist.is_initialized():
+            dist.barrier()
 
     def train(self):
         self.log("\n" + "=" * 80)
@@ -442,7 +462,11 @@ class Stage6RetrievalTrainer:
             avg_loss, avg_acc = self.train_epoch(epoch)
             self.log(f"\n✓ Epoch {epoch} - Loss: {avg_loss:.4f}, Accuracy: {avg_acc:.4f}")
 
-        # Save final model
+        # Save final model with proper synchronization
+        # Barrier: Wait for all GPUs before final save
+        if dist.is_initialized():
+            dist.barrier()
+
         if is_main_process():
             final_dir = PROJECT_ROOT / self.stage_config['checkpoint']['output_dir'] / "final"
             final_dir.mkdir(parents=True, exist_ok=True)
@@ -456,7 +480,7 @@ class Stage6RetrievalTrainer:
             self.log(f"   Output: {final_dir}")
             self.log("=" * 80)
 
-        # Cleanup
+        # Barrier: Wait for save to complete before cleanup
         if dist.is_initialized():
             dist.barrier()
         cleanup_distributed()

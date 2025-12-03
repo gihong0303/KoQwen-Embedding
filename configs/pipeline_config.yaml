@@ -321,9 +321,11 @@ stage6:
     temperature: 0.05
     pooling: "mean"
     use_hard_negatives: true      # Use MIRACL's annotated hard negatives
+    use_cross_gpu_negatives: true # Gather negatives from all GPUs for larger batch
 
   dataset:
-    miracl_samples: 50000         # MIRACL Korean train set
+    miracl_samples: 50000         # MIRACL Korean train set (~1.8k queries expanded)
+    mmarco_samples: 100000        # mMARCO Korean (large-scale retrieval data)
     kornli_samples: 100000        # KorNLI entailment pairs
     include_hard_negatives: true
 
