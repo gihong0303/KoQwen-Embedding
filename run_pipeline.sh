@@ -1,15 +1,21 @@
 #!/bin/bash
 # ============================================================================
 # Korean Embedding Training Pipeline
-# 5-Stage Pipeline with Proper DDP Configuration
+# 6-Stage Pipeline with Proper DDP Configuration
 # ============================================================================
 #
 # Usage:
-#   ./run_pipeline.sh              # Run all stages
+#   ./run_pipeline.sh              # Run all stages (1-6)
 #   ./run_pipeline.sh --stage 1    # Run specific stage
+#   ./run_pipeline.sh --stage 6    # Run Stage 6 (Supervised Retrieval)
 #   ./run_pipeline.sh --eval       # Run evaluation only
+#   ./run_pipeline.sh --eval-parallel  # Run parallel evaluation (multi-GPU)
 #   ./run_pipeline.sh --resume 3   # Resume from stage 3
 #
+# Stage 6: Supervised Retrieval Contrastive Learning
+#   - Uses MIRACL Korean (query-document pairs)
+#   - Uses KorNLI entailment pairs
+#   - Optimizes retrieval performance directly
 # ============================================================================
 
 set -e
@@ -47,6 +53,7 @@ MASTER_PORT=29500
 
 STAGE=""
 EVAL_ONLY=false
+EVAL_PARALLEL=false
 PREPARE_ONLY=false
 RESUME_FROM=""
 
@@ -58,6 +65,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --eval)
             EVAL_ONLY=true
+            shift
+            ;;
+        --eval-parallel)
+            EVAL_PARALLEL=true
             shift
             ;;
         --prepare)
@@ -76,12 +87,21 @@ while [[ $# -gt 0 ]]; do
             echo "Usage: $0 [OPTIONS]"
             echo ""
             echo "Options:"
-            echo "  --stage N     Run only stage N (1-5)"
-            echo "  --eval        Run evaluation only"
-            echo "  --prepare     Run preparation only (token difficulty)"
-            echo "  --resume N    Resume from stage N"
-            echo "  --config F    Use config file F"
-            echo "  --help        Show this help"
+            echo "  --stage N       Run only stage N (1-6)"
+            echo "  --eval          Run sequential evaluation (single GPU)"
+            echo "  --eval-parallel Run parallel evaluation (multi-GPU)"
+            echo "  --prepare       Run preparation only (token difficulty)"
+            echo "  --resume N      Resume from stage N"
+            echo "  --config F      Use config file F"
+            echo "  --help          Show this help"
+            echo ""
+            echo "Stages:"
+            echo "  1: Easy tokens (curriculum learning)"
+            echo "  2: Medium tokens (curriculum learning)"
+            echo "  3: Hard tokens (curriculum learning)"
+            echo "  4: Full vocabulary harmonization"
+            echo "  5: LoRA fine-tuning (NLI)"
+            echo "  6: Supervised retrieval (MIRACL + KorNLI)"
             exit 0
             ;;
         *)
@@ -146,14 +166,35 @@ run_stage() {
 
 run_evaluation() {
     local model_path=$1
+    local parallel=$2
 
     log_header "MTEB Korean Retrieval Evaluation"
 
-    python scripts/evaluate_mteb.py \
+    if [ "$parallel" = "true" ]; then
+        log_info "Running parallel evaluation (multi-GPU)..."
+        python scripts/evaluate_mteb_parallel.py \
+            --model_path "$model_path" \
+            --output_dir "evaluation_results" \
+            --parallel
+    else
+        log_info "Running sequential evaluation (single GPU)..."
+        python scripts/evaluate_mteb_parallel.py \
+            --model_path "$model_path" \
+            --output_dir "evaluation_results" \
+            --device "cuda:0"
+    fi
+}
+
+run_comparison() {
+    local model_path=$1
+    local baseline=$2
+
+    log_header "Model Comparison"
+
+    python scripts/evaluate_mteb_parallel.py \
         --model_path "$model_path" \
         --output_dir "evaluation_results" \
-        --batch_size 64 \
-        --device "cuda:0"
+        --compare "$baseline"
 }
 
 # ============================================================================
@@ -195,8 +236,12 @@ if [ "$PREPARE_ONLY" = true ]; then
 fi
 
 # Evaluation only mode
-if [ "$EVAL_ONLY" = true ]; then
-    FINAL_MODEL="checkpoints/stage5/final"
+if [ "$EVAL_ONLY" = true ] || [ "$EVAL_PARALLEL" = true ]; then
+    # Find the best available model (stage6 > stage5 > stage4)
+    FINAL_MODEL="checkpoints/stage6/final"
+    if [ ! -d "$FINAL_MODEL" ]; then
+        FINAL_MODEL="checkpoints/stage5/final"
+    fi
     if [ ! -d "$FINAL_MODEL" ]; then
         FINAL_MODEL="checkpoints/stage4/final"
     fi
@@ -204,7 +249,12 @@ if [ "$EVAL_ONLY" = true ]; then
         echo "Error: No trained model found"
         exit 1
     fi
-    run_evaluation "$FINAL_MODEL"
+
+    if [ "$EVAL_PARALLEL" = true ]; then
+        run_evaluation "$FINAL_MODEL" "true"
+    else
+        run_evaluation "$FINAL_MODEL" "false"
+    fi
     exit 0
 fi
 
@@ -238,14 +288,17 @@ if [ -n "$STAGE" ]; then
         5)
             run_stage 5 "scripts/stage5.py" "checkpoints/stage4/final" "checkpoints/stage5"
             ;;
+        6)
+            run_stage 6 "scripts/stage6_retrieval.py" "checkpoints/stage5/final" "checkpoints/stage6"
+            ;;
         *)
-            echo "Invalid stage: $STAGE (valid: 1-5)"
+            echo "Invalid stage: $STAGE (valid: 1-6)"
             exit 1
             ;;
     esac
 else
-    # Run all stages
-    for ((i=START_STAGE; i<=5; i++)); do
+    # Run all stages (1-6)
+    for ((i=START_STAGE; i<=6; i++)); do
         case $i in
             1)
                 run_stage 1 "scripts/stage1_curriculum.py" "" "checkpoints/stage1"
@@ -262,6 +315,9 @@ else
             5)
                 run_stage 5 "scripts/stage5.py" "checkpoints/stage4/final" "checkpoints/stage5"
                 ;;
+            6)
+                run_stage 6 "scripts/stage6_retrieval.py" "checkpoints/stage5/final" "checkpoints/stage6"
+                ;;
         esac
     done
 fi
@@ -269,7 +325,11 @@ fi
 # Final evaluation
 log_header "PIPELINE COMPLETE!"
 
-FINAL_MODEL="checkpoints/stage5/final"
+# Find the best available model
+FINAL_MODEL="checkpoints/stage6/final"
+if [ ! -d "$FINAL_MODEL" ]; then
+    FINAL_MODEL="checkpoints/stage5/final"
+fi
 if [ ! -d "$FINAL_MODEL" ]; then
     FINAL_MODEL="checkpoints/stage4/final"
 fi
@@ -278,10 +338,18 @@ if [ -d "$FINAL_MODEL" ]; then
     echo "Final model: $FINAL_MODEL"
     echo ""
     echo "To run evaluation:"
-    echo "  ./run_pipeline.sh --eval"
+    echo "  ./run_pipeline.sh --eval          # Sequential (single GPU)"
+    echo "  ./run_pipeline.sh --eval-parallel # Parallel (multi-GPU, faster)"
     echo ""
     echo "Or compare with baseline:"
-    echo "  python scripts/evaluate_mteb.py --model_path $FINAL_MODEL --compare Qwen/Qwen3-Embedding-0.6B"
+    echo "  python scripts/evaluate_mteb_parallel.py \\"
+    echo "      --model_path $FINAL_MODEL \\"
+    echo "      --compare Qwen/Qwen3-Embedding-0.6B"
+    echo ""
+    echo "Stage 6 uses supervised retrieval contrastive learning:"
+    echo "  - MIRACL Korean (query-document pairs)"
+    echo "  - KorNLI entailment pairs"
+    echo "  - Optimizes all 6 MTEB Korean retrieval tasks"
 else
     echo "Warning: No final model found"
 fi

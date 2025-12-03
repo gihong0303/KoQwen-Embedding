@@ -1,19 +1,21 @@
 # ============================================================================
 # Korean Embedding Expansion for Qwen3-Embedding-0.6B
-# 5-Stage Pipeline (Optimized for RTX A5000 24GB x 8)
+# 6-Stage Pipeline (Optimized for RTX A5000 24GB x 8)
 # ============================================================================
 #
 # Stage 1: Easy Tokens (30% easiest) - Curriculum Learning
 # Stage 2: Medium Tokens (40% medium) - Curriculum Learning
 # Stage 3: Hard Tokens (30% hardest) - Curriculum Learning
 # Stage 4: Full Vocabulary Harmonization
-# Stage 5: LoRA Fine-tuning (Optional - for semantic understanding)
+# Stage 5: LoRA Fine-tuning (Semantic understanding with NLI)
+# Stage 6: Supervised Retrieval Contrastive (MIRACL + KorNLI)
 #
-# Note: Stage 6 removed - SimCSE loss destroys retrieval performance
+# Note: Stage 6 uses SUPERVISED contrastive (not SimCSE unsupervised)
+#       to directly optimize retrieval performance
 # ============================================================================
 
 project:
-  name: "ko-qwen3-embedding-5stage"
+  name: "ko-qwen3-embedding-6stage"
   base_model: "Qwen/Qwen3-Embedding-0.6B"
   tokenizer_path: "outputs/koqwen-expanded"
   original_vocab_size: 151669
@@ -290,6 +292,66 @@ stage5:
     log_steps: 100
 
 # ============================================================================
+# Stage 6: Supervised Retrieval Contrastive Learning
+# ============================================================================
+# Key difference from old Stage 6 (SimCSE):
+# - Uses MIRACL Korean (query-document pairs with hard negatives)
+# - Uses KorNLI entailment pairs as pseudo retrieval
+# - Supervised contrastive loss (not unsupervised SimCSE)
+# - Low learning rate to preserve existing capabilities
+# ============================================================================
+stage6:
+  name: "Stage 6 - Supervised Retrieval Contrastive"
+  description: "Retrieval optimization with MIRACL + KorNLI (supervised contrastive)"
+
+  use_lora: true
+  lora_config:
+    r: 32                         # Lower rank than Stage 5 for fine refinement
+    lora_alpha: 64
+    lora_dropout: 0.05
+    target_modules:
+      - "q_proj"
+      - "k_proj"
+      - "v_proj"
+      - "o_proj"
+    bias: "none"
+
+  retrieval:
+    loss_type: "mnrl"             # Multiple Negatives Ranking Loss
+    temperature: 0.05
+    pooling: "mean"
+    use_hard_negatives: true      # Use MIRACL's annotated hard negatives
+
+  dataset:
+    miracl_samples: 50000         # MIRACL Korean train set
+    kornli_samples: 100000        # KorNLI entailment pairs
+    include_hard_negatives: true
+
+  training:
+    num_epochs: 1
+    batch_size: 24                # RTX A5000 24GB + LoRA + query/pos/neg
+    gradient_accumulation_steps: 4
+    max_query_length: 128
+    max_passage_length: 384
+    learning_rate: 2e-5           # Very low LR to preserve existing abilities
+    weight_decay: 0.01
+    warmup_ratio: 0.1
+    lr_scheduler_type: "cosine"
+    max_grad_norm: 1.0
+
+  optimization:
+    mixed_precision: "bf16"
+    gradient_checkpointing: true
+
+  checkpoint:
+    output_dir: "checkpoints/stage6"
+    save_steps: 1000
+    save_total_limit: 2
+
+  logging:
+    log_steps: 50
+
+# ============================================================================
 # Hardware Settings (8 GPUs: 1-8, RTX A5000 24GB)
 # ============================================================================
 hardware:
@@ -304,23 +366,30 @@ hardware:
 # ============================================================================
 evaluation:
   mteb_tasks:
+    # Core 6 tasks for comparison with main/main-v2 branches
     - task: "Ko-StrategyQA"
       subset: "default"
       type: "retrieval"
     - task: "AutoRAGRetrieval"
       subset: "default"
       type: "retrieval"
-    - task: "BelebeleRetrieval"
-      subset: "kor_Hang-kor_Hang"
-      type: "retrieval"
-    - task: "BelebeleRetrieval"
-      subset: "kor_Hang-eng_Latn"
-      type: "retrieval"
-    - task: "BelebeleRetrieval"
-      subset: "eng_Latn-kor_Hang"
+    - task: "MIRACLRetrieval"
+      subset: "ko"
       type: "retrieval"
     - task: "PublicHealthQA"
       subset: "korean"
       type: "retrieval"
+    - task: "BelebeleRetrieval"
+      subset: "kor_Hang-kor_Hang"
+      type: "retrieval"
+    - task: "MrTidyRetrieval"
+      subset: "korean"
+      type: "retrieval"
   batch_size: 64
   output_dir: "evaluation_results"
+
+  # GPU mapping for parallel evaluation (MIRACL and MrTidy are slow)
+  gpu_mapping:
+    0: ["Ko-StrategyQA", "AutoRAGRetrieval", "PublicHealthQA", "BelebeleRetrieval"]
+    1: ["MIRACLRetrieval"]
+    2: ["MrTidyRetrieval"]

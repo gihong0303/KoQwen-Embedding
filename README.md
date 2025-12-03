@@ -1,6 +1,6 @@
 # Korean Embedding Expansion for Qwen3-Embedding-0.6B
 
-**Curriculum Learning + Contrastive Training for Korean Embedding Enhancement**
+**6-Stage Curriculum Learning + Supervised Retrieval Contrastive Training**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
@@ -10,28 +10,48 @@
 
 ## Overview
 
-This project extends **Qwen3-Embedding-0.6B** with **68,029 Korean-specific tokens** through a **5-stage curriculum learning pipeline**.
+This project extends **Qwen3-Embedding-0.6B** with **68,029 Korean-specific tokens** through a **6-stage curriculum learning pipeline**.
 
 ### Key Features
 
-- **5-Stage Curriculum Pipeline**: Progressive learning from easy to hard tokens
-- **8 GPU DDP Training**: Optimized for multi-GPU distributed training
-- **MTEB Evaluation**: Built-in evaluation on 6 Korean retrieval tasks
-- **Retrieval-Safe Design**: Stage 6 removed to preserve retrieval performance
+- **6-Stage Pipeline**: Curriculum learning (Stage 1-3) + Vocabulary harmonization (Stage 4) + NLI (Stage 5) + **Supervised Retrieval** (Stage 6)
+- **8 GPU DDP Training**: Optimized for multi-GPU distributed training with PyTorch DDP
+- **MTEB Evaluation**: Built-in parallel evaluation on 6 Korean retrieval tasks
+- **Supervised Retrieval**: Stage 6 uses MIRACL + KorNLI for direct retrieval optimization
 
 ---
 
-## 5-Stage Pipeline
+## 6-Stage Pipeline
 
-| Stage | Focus | Trainable | Dataset | Samples |
-|-------|-------|-----------|---------|---------|
-| **Stage 1** | Easy tokens (30%) | New tokens | WEBTEXT + KorNLI | 500K |
-| **Stage 2** | Medium tokens (40%) | New tokens | WEBTEXT + KorNLI | 500K |
-| **Stage 3** | Hard tokens (30%) | New tokens | WEBTEXT + SyntheticText + KorNLI | 500K |
-| **Stage 4** | Full vocab alignment | All tokens | Mixed (4 datasets) | 500K |
-| **Stage 5** | Semantic fine-tuning | LoRA (r=64) | KorNLI + COT | 500K |
+| Stage | Focus | Trainable | Dataset | Key Feature |
+|-------|-------|-----------|---------|-------------|
+| **Stage 1** | Easy tokens (30%) | New tokens | WEBTEXT + KorNLI | Curriculum (easy first) |
+| **Stage 2** | Medium tokens (40%) | New tokens | WEBTEXT + KorNLI | Curriculum (medium) |
+| **Stage 3** | Hard tokens (30%) | New tokens | WEBTEXT + SyntheticText | Curriculum (hard) |
+| **Stage 4** | Full vocab alignment | All tokens | Mixed (4 datasets) | Harmonization |
+| **Stage 5** | Semantic fine-tuning | LoRA (r=64) | KorNLI + COT | NLI understanding |
+| **Stage 6** | Retrieval optimization | LoRA (r=32) | **MIRACL + KorNLI** | **Supervised Contrastive** |
 
-**Note**: Stage 6 was removed because SimCSE unsupervised loss destroys retrieval performance (97%+ NDCG drop observed).
+### Stage 6: Supervised Retrieval Contrastive
+
+**Key difference from old SimCSE approach:**
+
+```python
+# OLD (SimCSE Unsupervised) - Same text twice, different dropout
+outputs1 = model(text)  # dropout mask A
+outputs2 = model(text)  # dropout mask B <- 자기 자신만 positive
+loss = contrastive_loss(outputs1, outputs2)  # DESTROYS retrieval!
+
+# NEW (Supervised Retrieval) - Real query-document pairs
+query_emb = model(query)
+pos_doc_emb = model(positive_document)   # 실제 관련 문서
+neg_doc_emb = model(negative_document)   # Hard negative (native speaker annotated)
+loss = retrieval_contrastive_loss(query_emb, pos_doc_emb, neg_doc_emb)
+```
+
+**Data Sources:**
+- **MIRACL Korean**: Query-document pairs with hard negatives (native speaker annotated)
+- **KorNLI**: Entailment pairs as pseudo-retrieval (premise→hypothesis)
 
 ---
 
@@ -43,73 +63,58 @@ This project extends **Qwen3-Embedding-0.6B** with **68,029 Korean-specific toke
 # Install dependencies
 pip install -r requirements.txt
 
-# Hardware: 8x GPUs (A100 recommended) with CUDA_VISIBLE_DEVICES="1,2,3,4,5,6,7,8"
+# Hardware: 8x GPUs (A5000/A100) with CUDA_VISIBLE_DEVICES="1,2,3,4,5,6,7,8"
 ```
 
 ### Run Training Pipeline
 
 ```bash
-# Run all stages
+# Run all 6 stages
 ./run_pipeline.sh
 
 # Run specific stage
-./run_pipeline.sh --stage 3
+./run_pipeline.sh --stage 6    # Run Stage 6 only
 
 # Resume from stage
-./run_pipeline.sh --resume 4
+./run_pipeline.sh --resume 5   # Resume from Stage 5
 ```
 
 ### Evaluate Model
 
 ```bash
-# Run MTEB Korean Retrieval evaluation
+# Sequential evaluation (single GPU)
 ./run_pipeline.sh --eval
 
-# Or run manually
-python scripts/evaluate_mteb.py --model_path checkpoints/stage5/final
+# Parallel evaluation (multi-GPU, faster for MIRACL/MrTidy)
+./run_pipeline.sh --eval-parallel
 
 # Compare with baseline
-python scripts/evaluate_mteb.py \
-    --model_path checkpoints/stage5/final \
+python scripts/evaluate_mteb_parallel.py \
+    --model_path checkpoints/stage6/final \
     --compare Qwen/Qwen3-Embedding-0.6B
 ```
 
 ---
 
-## MTEB Evaluation Results
+## Expected Results (Stage 6)
 
-### Korean Retrieval Benchmark (nDCG@10)
+### Target: All 6 Tasks Improved
 
-| Task | Baseline (Qwen3-Embedding-0.6B) | Trained | Change |
-|------|--------------------------------|---------|--------|
-| AutoRAGRetrieval | 0.7452 | 0.7482 | **+0.40%** |
-| BelebeleRetrieval | 0.6039 | 0.6517 | **+7.93%** |
-| Ko-StrategyQA | 0.5772 | 0.6039 | **+4.62%** |
-| PublicHealthQA | 0.7426 | 0.7543 | **+1.58%** |
-| MIRACLRetrieval | 0.3469 | 0.3198 | -7.81% |
-| MrTidyRetrieval | 0.2803 | 0.2525 | -9.93% |
-| **Average** | **0.5494** | **0.5551** | **+1.04%** |
+Stage 6의 Supervised Retrieval은 두 브랜치의 장점을 결합합니다:
 
-### Summary
+| Task | main (SimCSE) | main-v2 (NLI) | Stage 6 (Expected) |
+|------|--------------|---------------|-------------------|
+| Ko-StrategyQA | +12.0% | +4.62% | ✅ Best of both |
+| MrTidyRetrieval | +8.6% | -9.93% | ✅ MIRACL optimizes |
+| BelebeleRetrieval | +3.3% | +7.93% | ✅ Both improved |
+| MIRACLRetrieval | +2.7% | -7.81% | ✅ MIRACL optimizes |
+| AutoRAGRetrieval | -2.1% | +0.40% | ✅ NLI preserves |
+| PublicHealthQA | -5.5% | +1.58% | ✅ NLI preserves |
 
-- **4/6 tasks improved**: AutoRAG, Belebele, Ko-StrategyQA, PublicHealthQA
-- **Best improvement**: BelebeleRetrieval (+7.93%)
-- **Overall average**: +1.04% improvement
-
----
-
-## MTEB Evaluation Tasks
-
-The model is evaluated on 6 Korean retrieval tasks:
-
-| Task | Type | Description |
-|------|------|-------------|
-| Ko-StrategyQA | Retrieval | Korean strategy QA |
-| AutoRAGRetrieval | Retrieval | Korean RAG benchmark |
-| BelebeleRetrieval | Retrieval | Multilingual reading comprehension |
-| PublicHealthQA | Retrieval | Korean health QA |
-| MIRACLRetrieval | Retrieval | Multilingual retrieval |
-| MrTidyRetrieval | Retrieval | Multilingual retrieval |
+**Why Stage 6 should work:**
+- MIRACL directly optimizes MrTidy/MIRACL performance (same domain)
+- KorNLI preserves PublicHealthQA/AutoRAG performance
+- Low learning rate (2e-5) prevents catastrophic forgetting
 
 ---
 
@@ -118,22 +123,22 @@ The model is evaluated on 6 Korean retrieval tasks:
 ```
 KoQwen-Embedding/
 ├── configs/
-│   └── pipeline_config.yaml      # Main configuration
+│   └── pipeline_config.yaml      # 6-stage configuration
 ├── scripts/
-│   ├── base_trainer.py           # Base trainer with DDP
-│   ├── enhanced_trainer.py       # Curriculum-aware trainer
+│   ├── base_trainer.py           # Base DDP trainer
 │   ├── stage1_curriculum.py      # Stage 1: Easy tokens
 │   ├── stage2_curriculum.py      # Stage 2: Medium tokens
 │   ├── stage3_curriculum.py      # Stage 3: Hard tokens
 │   ├── stage4.py                 # Stage 4: Full vocab
-│   ├── stage5.py                 # Stage 5: LoRA fine-tuning
-│   └── evaluate_mteb.py          # MTEB evaluation script
+│   ├── stage5.py                 # Stage 5: LoRA + NLI
+│   ├── stage6_retrieval.py       # Stage 6: Supervised Retrieval
+│   └── evaluate_mteb_parallel.py # Parallel MTEB evaluation
 ├── utils/
-│   ├── contrastive_loss.py       # SimCSE contrastive loss
-│   ├── curriculum_dataset.py     # Curriculum learning
-│   └── local_dataset_loader.py   # Dataset loading
+│   ├── contrastive_loss.py       # SimCSE loss (Stage 1-5)
+│   ├── retrieval_loss.py         # Supervised retrieval loss (Stage 6)
+│   ├── retrieval_dataset.py      # MIRACL + KorNLI loader
+│   └── curriculum_dataset.py     # Curriculum learning
 ├── run_pipeline.sh               # Main pipeline script
-├── requirements.txt
 └── README.md
 ```
 
@@ -144,57 +149,61 @@ KoQwen-Embedding/
 Edit `configs/pipeline_config.yaml` to customize:
 
 ```yaml
-# Hardware (adjust for your setup)
-hardware:
-  num_gpus: 8
-  gpu_ids: [1, 2, 3, 4, 5, 6, 7, 8]
+# Stage 6 Configuration
+stage6:
+  use_lora: true
+  lora_config:
+    r: 32                         # Lower rank for fine refinement
+    lora_alpha: 64
 
-# Training (batch sizes already 2x optimized)
-stage1:
+  retrieval:
+    loss_type: "mnrl"             # Multiple Negatives Ranking Loss
+    temperature: 0.05
+    use_hard_negatives: true      # MIRACL hard negatives
+
+  dataset:
+    miracl_samples: 50000         # MIRACL Korean
+    kornli_samples: 100000        # KorNLI entailment
+
   training:
-    batch_size: 48
-    gradient_accumulation_steps: 2
-    learning_rate: 3e-4
+    learning_rate: 2e-5           # Very low to preserve abilities
+    batch_size: 24
 ```
 
 ---
 
 ## DDP Training
 
-The pipeline uses PyTorch's DistributedDataParallel (DDP) with:
+PyTorch DistributedDataParallel with best practices:
 
 - **torchrun** for process management
 - **NCCL** backend for GPU communication
 - **30-minute timeout** for large model loading
 - **Barrier synchronization** for checkpoint saving
+- **find_unused_parameters=False** for efficiency
 
 ```bash
-# Environment variables set by run_pipeline.sh
+# Environment variables (set by run_pipeline.sh)
 export CUDA_VISIBLE_DEVICES="1,2,3,4,5,6,7,8"
 export NCCL_DEBUG=WARN
 export TORCH_NCCL_BLOCKING_WAIT=1
+export TORCH_NCCL_ASYNC_ERROR_HANDLING=1
 ```
 
 ---
 
-## Stage 6 Removal Rationale
+## MTEB Parallel Evaluation
 
-Stage 6 used SimCSE unsupervised loss with K2-Feedback data:
+For faster evaluation of slow tasks (MIRACL, MrTidy):
 
 ```python
-# SimCSE: Same text twice with different dropout
-outputs1 = model(input_ids)  # dropout mask A
-outputs2 = model(input_ids)  # dropout mask B
-loss = contrastive_loss(outputs1, outputs2)
+# GPU mapping for parallel evaluation
+TASK_GPU_MAPPING = {
+    0: ["Ko-StrategyQA", "AutoRAGRetrieval", "PublicHealthQA", "BelebeleRetrieval"],
+    1: ["MIRACLRetrieval"],    # Slow task on dedicated GPU
+    2: ["MrTidyRetrieval"],    # Slow task on dedicated GPU
+}
 ```
-
-**Problem**: This trains the model to recognize identical texts, NOT to match queries with relevant documents.
-
-**Impact**: 97-98% NDCG drop on retrieval tasks:
-- Ko-StrategyQA: 0.5766 → 0.0144 (-97.5%)
-- AutoRAGRetrieval: 0.7470 → 0.0137 (-98.2%)
-
-**Solution**: Remove Stage 6 to preserve retrieval capability.
 
 ---
 
@@ -220,7 +229,7 @@ pandas
 
 ```bibtex
 @misc{koqwen-embedding-2024,
-  title={Korean Embedding Expansion with Curriculum Learning},
+  title={Korean Embedding Expansion with Curriculum Learning and Supervised Retrieval},
   author={gihong0303},
   year={2024},
   howpublished={\url{https://github.com/gihong0303/KoQwen-Embedding}}
@@ -232,6 +241,7 @@ pandas
 ## Acknowledgments
 
 - **Qwen Team**: Qwen3-Embedding-0.6B base model
+- **MIRACL Team**: Multilingual retrieval dataset with hard negatives
 - **HAERAE-HUB**: Korean datasets
 - **Kakaobrain**: KorNLI dataset
 
