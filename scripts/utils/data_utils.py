@@ -212,7 +212,7 @@ def create_dataloader(
             rank=rank,
             shuffle=shuffle
         )
-        shuffle = False  # sampler가 있으면 shuffle은 False
+        shuffle = False  # a sampler handles shuffling
 
     dataloader = DataLoader(
         dataset,
@@ -221,7 +221,7 @@ def create_dataloader(
         sampler=sampler,
         num_workers=num_workers,
         pin_memory=pin_memory,
-        drop_last=True  # 마지막 불완전한 배치 제거
+        drop_last=True  # drop the last partial batch
     )
 
     return dataloader

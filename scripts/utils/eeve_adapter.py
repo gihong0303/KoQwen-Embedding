@@ -101,7 +101,7 @@ class GatedAdapter(nn.Module):
         nn.init.normal_(self.up_proj.weight, std=init_scale)
         nn.init.zeros_(self.up_proj.bias)
         nn.init.zeros_(self.gate_linear.weight)
-        nn.init.constant_(self.gate_linear.bias, -3.0)  # 초기에는 거의 닫힘
+        nn.init.constant_(self.gate_linear.bias, -3.0)  # starts nearly closed
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
         residual = hidden_states
@@ -188,12 +188,12 @@ class HierarchicalAdapter(nn.Module):
             nn.Linear(hidden_size, adapter_size, bias=True),
             nn.GELU(),
             nn.Dropout(dropout),
-            nn.Linear(adapter_size, hidden_size, bias=True)  # 수정: hidden_size 출력
+            nn.Linear(adapter_size, hidden_size, bias=True)  # outputs hidden_size
         )
 
         # Layer 2: Task-specific adapter (Embedding)
         self.task_adapter = nn.Sequential(
-            nn.Linear(hidden_size, adapter_size // 2, bias=True),  # 수정: hidden_size 입력
+            nn.Linear(hidden_size, adapter_size // 2, bias=True),  # takes hidden_size as input
             nn.GELU(),
             nn.Dropout(dropout),
             nn.Linear(adapter_size // 2, hidden_size, bias=True)
