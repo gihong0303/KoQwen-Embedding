@@ -168,14 +168,14 @@ def compute_embedding_stats(model, tokenizer, device="cuda"):
     vocab_size = len(tokenizer)
 
     with torch.no_grad():
-        # 전체 임베딩 norm
+        # Norm over all embeddings
         all_norms = torch.norm(embed_tokens.weight, dim=1)
 
-        # 새 토큰 범위 (기존 Qwen vocab: 151,669)
+        # New-token range (original Qwen vocab: 151,669)
         old_vocab_size = 151669
         new_token_mask = torch.arange(vocab_size, device=device) >= old_vocab_size
 
-        # 기존 토큰 vs 새 토큰 norm 비교
+        # Compare norms of original vs newly added tokens
         old_norms = all_norms[~new_token_mask]
         new_norms = all_norms[new_token_mask]
 

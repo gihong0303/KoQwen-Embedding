@@ -20,7 +20,13 @@ except ImportError:
 class LocalDatasetLoader:
     """로컬 parquet 파일 로더"""
 
-    def __init__(self, base_path: str = "~/haerae_dataset", cache_dir: str = "/tmp/dataset_cache"):
+    def __init__(self, base_path: str | None = None, cache_dir: str | None = None):
+        # A user-specific default path breaks on any other machine.
+        # Allow an env-var override; otherwise fall back to a standard cache location.
+        base_path = base_path or os.environ.get("HAERAE_DATASET_DIR", "./data/haerae_dataset")
+        cache_dir = cache_dir or os.environ.get(
+            "DATASET_CACHE_DIR", str(Path.home() / ".cache" / "koqwen-datasets")
+        )
         self.base_path = Path(base_path).expanduser()
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
@@ -42,7 +48,7 @@ class LocalDatasetLoader:
 
     def _get_cache_path(self, dataset_name: str, max_samples: Optional[int] = None) -> Path:
         """캐시 경로 생성"""
-        # 데이터셋 이름과 max_samples로 고유 해시 생성
+        # Hash on dataset name + max_samples so each variant caches separately
         cache_key = f"{dataset_name}_{max_samples}"
         cache_hash = hashlib.md5(cache_key.encode()).hexdigest()[:8]
         return self.cache_dir / f"{dataset_name}_{cache_hash}"
@@ -69,7 +75,7 @@ class LocalDatasetLoader:
         rank = self._get_rank()
         cache_path = self._get_cache_path(dataset_name, max_samples)
 
-        # 캐시가 이미 있으면 로드
+        # Load from cache if it already exists
         if cache_path.exists():
             if rank == 0:
                 print(f"[Rank {rank}] Loading from cache: {cache_path}")
@@ -77,14 +83,14 @@ class LocalDatasetLoader:
             self._barrier()
             return dataset
 
-        # Rank 0만 데이터 로드
+        # Only rank 0 loads the data
         if rank == 0:
             dataset_path = self.base_path / dataset_name / "default" / "train"
 
             if not dataset_path.exists():
                 raise FileNotFoundError(f"Dataset not found: {dataset_path}")
 
-            # 모든 parquet 파일 찾기
+            # Collect every parquet shard
             parquet_files = sorted(glob.glob(str(dataset_path / "*.parquet")))
 
             if not parquet_files:
@@ -92,7 +98,7 @@ class LocalDatasetLoader:
 
             print(f"[Rank 0] Found {len(parquet_files)} parquet files in {dataset_name}")
 
-            # 파일들을 순차적으로 읽으면서 max_samples 제한
+            # Read shards in order, stopping at max_samples
             dfs = []
             total_samples = 0
 
@@ -100,7 +106,7 @@ class LocalDatasetLoader:
                 df = pd.read_parquet(pq_file)
 
                 if max_samples and total_samples + len(df) > max_samples:
-                    # 남은 샘플 수만큼만 가져오기
+                    # Take only as many rows as remain in the budget
                     remaining = max_samples - total_samples
                     df = df.head(remaining)
                     dfs.append(df)
@@ -112,16 +118,16 @@ class LocalDatasetLoader:
                 if max_samples and total_samples >= max_samples:
                     break
 
-            # 모든 DataFrame 합치기
+            # Concatenate the shard DataFrames
             combined_df = pd.concat(dfs, ignore_index=True)
 
-            # 전처리 함수 적용
+            # Apply the preprocessing function
             if preprocessing_fn:
                 combined_df = preprocessing_fn(combined_df)
 
-            # text 컬럼 확인 및 변환
+            # Check for a text column and normalize it
             if text_column not in combined_df.columns:
-                # 자동으로 text 컬럼 찾기
+                # Infer the text column
                 possible_columns = ['text', 'content', 'question', 'Question', 'response']
                 for col in possible_columns:
                     if col in combined_df.columns:
@@ -130,23 +136,23 @@ class LocalDatasetLoader:
                 else:
                     raise ValueError(f"No text column found in {dataset_name}")
 
-            # 'text' 컬럼으로 통일
+            # Normalize the column name to 'text'
             if text_column != 'text':
                 combined_df['text'] = combined_df[text_column]
 
-            # HuggingFace Dataset으로 변환
+            # Convert to a HuggingFace Dataset
             dataset = Dataset.from_pandas(combined_df[['text']])
 
             print(f"[Rank 0] Loaded {len(dataset)} samples from {dataset_name}")
 
-            # 캐시에 저장
+            # Write to cache
             dataset.save_to_disk(str(cache_path))
             print(f"[Rank 0] Saved to cache: {cache_path}")
 
-        # Barrier: Rank 0이 끝날 때까지 대기
+        # Barrier: wait for rank 0 to finish writing the cache
         self._barrier()
 
-        # 모든 rank가 캐시에서 로드
+        # Every rank now reads from the cache
         if rank != 0:
             dataset = Dataset.load_from_disk(str(cache_path))
 
@@ -173,7 +179,7 @@ class LocalDatasetLoader:
         if not base_path.exists():
             raise FileNotFoundError(f"KoSimpleEval not found: {base_path}")
 
-        # 모든 서브셋 폴더 찾기
+        # Collect every subset directory
         subsets = [d.name for d in base_path.iterdir() if d.is_dir()]
 
         print(f"Found KoSimpleEval subsets: {subsets}")
@@ -185,19 +191,19 @@ class LocalDatasetLoader:
 
             if parquet_file.exists():
                 df = pd.read_parquet(parquet_file)
-                # question 컬럼에서 텍스트 추출
+                # Take the text from the question column
                 if 'question' in df.columns:
                     df['text'] = df['question'].str.split('###').str[1]
                     df['text'] = df['text'].fillna(df['question'])
                     dfs.append(df[['text']])
                 elif 'text' in df.columns:
-                    # 이미 'text' 컬럼이 있는 경우
+                    # Already has a 'text' column
                     dfs.append(df[['text']])
 
-        # 합치기
+        # Concatenate
         if not dfs:
             print(f"Warning: No valid data found in KoSimpleEval subsets")
-            # 빈 데이터셋 생성
+            # Return an empty dataset
             combined_df = pd.DataFrame({'text': []})
         else:
             combined_df = pd.concat(dfs, ignore_index=True)
@@ -221,13 +227,13 @@ class LocalDatasetLoader:
         rank = self._get_rank()
         cache_path = self._get_cache_path("HAE-RAE-COT", max_samples)
 
-        # 캐시가 있으면 로드
+        # Load from cache if present
         if cache_path.exists():
             dataset = Dataset.load_from_disk(str(cache_path))
             self._barrier()
             return dataset
 
-        # Rank 0만 로드
+        # Only rank 0 loads
         if rank == 0:
             dataset_path = self.base_path / "HAE-RAE-COT" / "default" / "train"
             parquet_files = sorted(glob.glob(str(dataset_path / "*.parquet")))
@@ -238,7 +244,7 @@ class LocalDatasetLoader:
             for pq_file in parquet_files:
                 df = pd.read_parquet(pq_file)
 
-                # Question + CoT_Rationale 결합
+                # Join Question and CoT_Rationale
                 df['text'] = df['Question'].astype(str) + " " + df['CoT_Rationale'].astype(str)
 
                 if max_samples and total_samples + len(df) > max_samples:
@@ -287,7 +293,7 @@ class LocalDatasetLoader:
 
             df = pd.read_parquet(parquet_file)
 
-            # instruction + response 결합
+            # Join instruction and response
             df['text'] = df['instruction'].astype(str) + " " + df['response'].astype(str)
 
             if max_samples:
@@ -329,11 +335,11 @@ class LocalDatasetLoader:
             for pq_file in parquet_files:
                 df = pd.read_parquet(pq_file)
 
-                # Score 5인 것만 필터링
+                # Keep only score-5 rows
                 if 'score' in df.columns:
                     df = df[df['score'] == min_score]
 
-                # response 컬럼 사용
+                # Use the response column
                 if 'response' in df.columns:
                     df['text'] = df['response'].astype(str)
 
@@ -391,10 +397,10 @@ class LocalDatasetLoader:
 
             datasets.append(ds)
 
-        # 데이터셋 결합
+        # Concatenate the datasets
         combined = concatenate_datasets(datasets)
 
-        # 셔플
+        # Shuffle
         combined = combined.shuffle(seed=42)
 
         print(f"Combined dataset: {len(combined)} total samples")

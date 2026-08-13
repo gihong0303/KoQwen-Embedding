@@ -44,7 +44,7 @@ class AdapterLayer(nn.Module):
         # Gate (learnable scaling)
         self.gate = nn.Parameter(torch.zeros(1))
 
-        # 작은 값으로 초기화 (안정성)
+        # Small init keeps early training stable
         nn.init.normal_(self.down_proj.weight, std=init_scale)
         nn.init.zeros_(self.down_proj.bias)
         nn.init.normal_(self.up_proj.weight, std=init_scale)
@@ -95,7 +95,7 @@ class GatedAdapter(nn.Module):
         # Gating network
         self.gate_linear = nn.Linear(hidden_size, 1, bias=True)
 
-        # 초기화
+        # Initialize
         nn.init.normal_(self.down_proj.weight, std=init_scale)
         nn.init.zeros_(self.down_proj.bias)
         nn.init.normal_(self.up_proj.weight, std=init_scale)
@@ -147,7 +147,7 @@ class ParallelAdapter(nn.Module):
         # Mixing weight
         self.alpha = nn.Parameter(torch.tensor(0.1))
 
-        # 초기화
+        # Initialize
         for module in self.adapter:
             if isinstance(module, nn.Linear):
                 nn.init.normal_(module.weight, std=init_scale)
@@ -203,7 +203,7 @@ class HierarchicalAdapter(nn.Module):
         self.gate1 = nn.Parameter(torch.zeros(1))
         self.gate2 = nn.Parameter(torch.zeros(1))
 
-        # 초기화
+        # Initialize
         for module in [self.language_adapter, self.task_adapter]:
             for layer in module:
                 if isinstance(layer, nn.Linear):
@@ -222,7 +222,7 @@ class HierarchicalAdapter(nn.Module):
         """
         residual = hidden_states
 
-        # Layer 1: Language-specific (이제 차원이 맞음)
+        # Layer 1: language-specific (dimensions now line up)
         lang_output = self.language_adapter(hidden_states)
         lang_output = hidden_states + self.gate1 * lang_output
 
@@ -253,7 +253,7 @@ def inject_adapters(
     Returns:
         어댑터가 추가된 모델
     """
-    # Qwen 모델 구조 확인
+    # Inspect the Qwen model structure
     if hasattr(model, 'model') and hasattr(model.model, 'layers'):
         layers = model.model.layers
     elif hasattr(model, 'layers'):
@@ -261,7 +261,7 @@ def inject_adapters(
     else:
         raise ValueError("지원되지 않는 모델 구조입니다.")
 
-    # 어댑터 타입 선택
+    # Pick the adapter type
     adapter_class = {
         "bottleneck": AdapterLayer,
         "gated": GatedAdapter,
@@ -269,17 +269,17 @@ def inject_adapters(
         "hierarchical": HierarchicalAdapter
     }.get(adapter_type, AdapterLayer)
 
-    # 레이어 인덱스 결정
+    # Decide which layer indices to touch
     if layer_indices is None:
         layer_indices = list(range(len(layers)))
 
-    # 각 레이어에 어댑터 추가
+    # Attach an adapter to each selected layer
     for idx in layer_indices:
         if idx >= len(layers):
             continue
 
         layer = layers[idx]
-        # Qwen3/Qwen2는 config.hidden_size 사용
+        # Qwen3/Qwen2 expose the width as config.hidden_size
         if hasattr(model, 'config') and hasattr(model.config, 'hidden_size'):
             hidden_size = model.config.hidden_size
         elif hasattr(layer, 'self_attn') and hasattr(layer.self_attn, 'embed_dim'):
@@ -287,28 +287,28 @@ def inject_adapters(
         else:
             hidden_size = 768  # default fallback
 
-        # 어댑터 생성
+        # Build the adapter
         adapter = adapter_class(
             hidden_size=hidden_size,
             adapter_size=adapter_size,
             dropout=dropout
         )
 
-        # 레이어의 dtype과 device를 감지하여 어댑터를 같은 dtype/device로 이동
-        # 첫 번째 파라미터의 dtype과 device를 사용
+        # Move the adapter to the layer's dtype/device
+        # Read them from the layer's first parameter
         first_param = next(layer.parameters())
         adapter = adapter.to(dtype=first_param.dtype, device=first_param.device)
 
-        # 레이어에 어댑터 추가
+        # Register the adapter on the layer
         layer.adapter = adapter
 
-        # Forward hook 수정 (어댑터 적용)
+        # Wrap forward so the adapter is applied
         original_forward = layer.forward
 
         def forward_with_adapter(self, *args, **kwargs):
             output = original_forward(*args, **kwargs)
 
-            # output이 tuple인 경우 (hidden_states, ...)
+            # Output may be a tuple: (hidden_states, ...)
             if isinstance(output, tuple):
                 hidden_states = output[0]
                 hidden_states = self.adapter(hidden_states)
@@ -329,22 +329,22 @@ def freeze_except_adapters(model: nn.Module, also_train_embeddings: bool = False
         model: 모델
         also_train_embeddings: 임베딩도 학습할지 여부
     """
-    # 전체 freeze
+    # Freeze everything first
     for param in model.parameters():
         param.requires_grad = False
 
-    # 어댑터만 unfreeze
+    # Unfreeze the adapters only
     for name, param in model.named_parameters():
         if 'adapter' in name:
             param.requires_grad = True
 
-    # 임베딩도 학습하는 경우
+    # Optionally train the embeddings too
     if also_train_embeddings:
         for name, param in model.named_parameters():
             if 'embed_tokens' in name or 'lm_head' in name:
                 param.requires_grad = True
 
-    # 학습 가능한 파라미터 카운트
+    # Count trainable parameters
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
     total = sum(p.numel() for p in model.parameters())
 

@@ -42,7 +42,7 @@ def initialize_new_embeddings_eeve_style(
         logger.warning("No new tokens to initialize!")
         return model
 
-    # Embeddings 가져오기
+    # Fetch the embedding matrices
     embed_tokens = model.get_input_embeddings()
 
     if embed_tokens is None:
@@ -58,17 +58,17 @@ def initialize_new_embeddings_eeve_style(
         try:
             new_token_id = new_tokenizer.convert_tokens_to_ids(token)
 
-            # Old tokenizer로 subword 분해
+            # Split into subwords with the old tokenizer
             subtokens = old_tokenizer.tokenize(token)
 
             if not subtokens:
-                # Fallback: random initialization은 이미 되어 있음
+                # Fallback: random initialization is already in place
                 failed_count += 1
                 continue
 
             subtoken_ids = old_tokenizer.convert_tokens_to_ids(subtokens)
 
-            # Subtoken embedding 평균
+            # Average the subtoken embeddings
             with torch.no_grad():
                 subtoken_embeds = [embed_tokens.weight[sid] for sid in subtoken_ids]
                 avg_embed = torch.stack(subtoken_embeds).mean(dim=0)

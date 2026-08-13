@@ -76,7 +76,7 @@ def load_model(
     logger.info(f"경로: {model_path}")
     logger.info(f"dtype: {torch_dtype}")
 
-    # dtype 매핑
+    # dtype lookup
     dtype_map = {
         "float32": torch.float32,
         "float16": torch.float16,
@@ -84,8 +84,8 @@ def load_model(
     }
     dtype = dtype_map.get(torch_dtype, torch.bfloat16)
 
-    # 모델 로드 (accelerate 없을 경우 대비)
-    # config를 명시하지 않으면 checkpoint의 실제 크기 사용
+    # Load the model, tolerating a missing accelerate install
+    # Without an explicit config the checkpoint's own size is used
     try:
         model = AutoModel.from_pretrained(
             model_path,
@@ -94,19 +94,19 @@ def load_model(
             device_map=device_map if device_map != "auto" else None
         )
     except (ValueError, ImportError):
-        # accelerate 없을 때: device_map 없이 로드
+        # No accelerate: load without device_map
         logger.warning("accelerate 없음 - CPU로 로드 후 수동으로 GPU 이동")
         model = AutoModel.from_pretrained(
             model_path,
             trust_remote_code=True,
             torch_dtype=dtype
         )
-        # GPU 사용 가능하면 이동
+        # Move to GPU when one is available
         if torch.cuda.is_available():
             model = model.cuda()
             logger.info("✓ 모델을 GPU로 이동")
 
-    # use_cache 비활성화 (학습용)
+    # Disable use_cache for training
     if hasattr(model.config, 'use_cache'):
         model.config.use_cache = False
 
@@ -131,11 +131,11 @@ def freeze_model_params(model: nn.Module, trainable_params: List[str]) -> int:
     logger.info("모델 파라미터 프리징")
     logger.info("=" * 80)
 
-    # 전체 freeze
+    # Freeze everything first
     for param in model.parameters():
         param.requires_grad = False
 
-    # trainable_params만 unfreeze
+    # Unfreeze only the requested parameters
     trainable_count = 0
     for name, param in model.named_parameters():
         for trainable_name in trainable_params:
@@ -187,7 +187,7 @@ def expand_embeddings(
     logger.info(f"초기화 방법: {init_method}")
     logger.info("")
 
-    # 새 임베딩 생성
+    # Allocate the enlarged embedding matrix
     new_embed = nn.Embedding(
         new_vocab_size,
         old_embed.embedding_dim,
@@ -195,35 +195,35 @@ def expand_embeddings(
         dtype=old_embed.weight.dtype
     )
 
-    # 기존 임베딩 복사
+    # Copy the original embeddings over
     with torch.no_grad():
         new_embed.weight[:old_vocab_size] = old_embed.weight.clone()
 
-    # 새 토큰 초기화
+    # Initialize the newly added tokens
     logger.info("새 토큰 임베딩 초기화...")
     with torch.no_grad():
         for i, token in enumerate(tqdm(vocab_diff, desc="초기화")):
             new_idx = old_vocab_size + i
 
             if init_method == "mean":
-                # Qwen 토크나이저로 분해
+                # Split with the original Qwen tokenizer
                 subtoken_ids = qwen_tokenizer.encode(token, add_special_tokens=False)
 
                 if len(subtoken_ids) > 0:
-                    # 서브토큰 임베딩의 평균
+                    # Average the subtoken embeddings
                     subtoken_embeds = old_embed.weight[subtoken_ids]
                     new_embed.weight[new_idx] = subtoken_embeds.mean(dim=0)
                 else:
-                    # Fallback: 랜덤 초기화
+                    # Fallback: random initialization
                     torch.nn.init.normal_(new_embed.weight[new_idx:new_idx+1], mean=0.0, std=0.02)
 
             elif init_method == "random":
                 torch.nn.init.normal_(new_embed.weight[new_idx:new_idx+1], mean=0.0, std=0.02)
 
-    # 모델에 적용
+    # Apply to the model
     model.set_input_embeddings(new_embed)
 
-    # lm_head도 확장 (있는 경우)
+    # Extend lm_head as well, when present
     if hasattr(model, 'lm_head'):
         old_lm_head = model.lm_head
         new_lm_head = nn.Linear(
@@ -239,7 +239,7 @@ def expand_embeddings(
             if old_lm_head.bias is not None:
                 new_lm_head.bias[:old_vocab_size] = old_lm_head.bias.clone()
 
-            # 새 토큰 초기화 (임베딩과 동일하게)
+            # Initialize new tokens the same way as the embeddings
             for i, token in enumerate(vocab_diff):
                 new_idx = old_vocab_size + i
                 subtoken_ids = qwen_tokenizer.encode(token, add_special_tokens=False)
@@ -276,11 +276,11 @@ def save_model(model: nn.Module, tokenizer, output_dir: str):
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
-    # 토크나이저 저장
+    # Save the tokenizer
     tokenizer.save_pretrained(output_path)
     logger.info("✓ 토크나이저 저장 완료")
 
-    # 모델 저장
+    # Save the model
     model.save_pretrained(output_path)
     logger.info("✓ 모델 저장 완료")
     logger.info("")
@@ -303,12 +303,12 @@ def create_expanded_tokenizer(qwen_tokenizer, vocab_diff: List[str], output_dir:
     logger.info("=" * 80)
     logger.info(f"추가 토큰 수: {len(vocab_diff):,}")
 
-    # 토큰 추가
+    # Add the tokens
     num_added = qwen_tokenizer.add_tokens(vocab_diff)
     logger.info(f"✓ {num_added:,}개 토큰 추가됨")
     logger.info(f"✓ 새 vocab size: {len(qwen_tokenizer):,}")
 
-    # 저장
+    # Save
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
     qwen_tokenizer.save_pretrained(output_path)

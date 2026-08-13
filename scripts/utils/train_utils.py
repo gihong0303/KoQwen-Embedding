@@ -72,7 +72,7 @@ def setup_optimizer(
     Returns:
         Optimizer
     """
-    # Weight decay 제외할 파라미터
+    # Parameters excluded from weight decay
     no_decay = ["bias", "LayerNorm.weight", "layer_norm.weight"]
 
     optimizer_grouped_parameters = [

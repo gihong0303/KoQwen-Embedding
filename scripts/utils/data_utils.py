@@ -35,7 +35,7 @@ class TextDataset(Dataset):
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         text = self.texts[idx]
 
-        # 토크나이징
+        # Tokenize
         encoding = self.tokenizer(
             text,
             max_length=self.max_length,
@@ -136,7 +136,7 @@ def load_dataset(
     logger.info(f"Streaming: {streaming}")
 
     try:
-        # 데이터셋 로드
+        # Load the dataset
         dataset = hf_load_dataset(
             dataset_name,
             split=split,
@@ -144,18 +144,18 @@ def load_dataset(
             cache_dir=cache_dir
         )
 
-        # 텍스트 추출
+        # Extract the text field
         texts = []
 
         if streaming:
-            # 스트리밍 모드
+            # Streaming mode
             for i, example in enumerate(dataset):
                 if max_samples and i >= max_samples:
                     break
                 if text_field in example:
                     texts.append(example[text_field])
         else:
-            # 일반 모드
+            # Non-streaming mode
             if max_samples:
                 dataset = dataset.select(range(min(max_samples, len(dataset))))
 
@@ -164,7 +164,7 @@ def load_dataset(
 
             texts = [ex[text_field] for ex in tqdm(dataset, desc="텍스트 추출")]
 
-        # 필터링 (빈 텍스트 제거)
+        # Filter out empty texts
         texts = [t for t in texts if t and len(t.strip()) > 0]
 
         logger.info(f"✓ 로드 완료: {len(texts):,}개 샘플")
