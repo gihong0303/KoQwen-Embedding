@@ -1,4 +1,4 @@
-# 🇰🇷 Korean Embedding Expansion for Qwen3-Embedding-0.6B
+# Korean Embedding Expansion for Qwen3-Embedding-0.6B
 
 **점진적 어휘 확장을 통한 한국어 임베딩 모델 구축**
 
@@ -8,7 +8,7 @@
 
 ---
 
-## 📋 Executive Summary
+## Executive Summary
 
 본 연구는 한국어 임베딩 모델 학습을 위해 **EEVE (Efficient and Effective Vocabulary Expansion)**와 **Thunder-LLM**에서 영감을 받은 점진적 어휘 확장 방법론을 구현했습니다.
 
@@ -16,7 +16,7 @@
 
 ---
 
-## 🚀 Key Contributions
+## Key Contributions
 
 1. **차집합 기반 선택적 토큰 확장 방법론**
    - KORMo-10B와 Qwen3의 차집합 분석을 통한 한국어 특화 토큰 선별
@@ -35,7 +35,7 @@
 
 ---
 
-## 📊 6-Stage Progressive Training Pipeline
+## 6-Stage Progressive Training Pipeline
 
 ```mermaid
 graph TD
@@ -43,7 +43,7 @@ graph TD
     B --> C[Stage 1-3: New Token Learning<br/>Contrastive Learning on Embeddings]
     C --> D[Stage 4: Vocabulary Harmonization<br/>Full vocabulary training]
     D --> E[Stage 5-6: LoRA Transformer Layers<br/>Reasoning & High-quality data]
-    E --> F[Final Model<br/>Vocab: 219,698<br/>Separation: +24.59%]
+    E --> F[Final Model<br/>Vocab: 219,698]
 
     style A fill:#e3f2fd
     style B fill:#fff3e0
@@ -66,7 +66,7 @@ graph TD
 
 ---
 
-## 🔬 Methodology
+## Methodology
 
 ### 1. Tokenizer Expansion (Difference-Based Approach)
 
@@ -91,9 +91,9 @@ for token in filtered_tokens:
 ```
 
 **Why Difference-Based?**
-- ✅ 한국어 특화 토큰만 선별 (중복 없음)
-- ✅ 기존 Qwen vocabulary 완전 보존
-- ✅ KORMo의 한국어 최적화 토큰 활용
+- 한국어 특화 토큰만 선별 (중복 없음)
+- 기존 Qwen vocabulary 완전 보존
+- KORMo의 한국어 최적화 토큰 활용
 
 ### 2. Contrastive Learning for Embeddings
 
@@ -123,10 +123,10 @@ class EmbeddingContrastiveLoss(nn.Module):
 ```
 
 **Key Differences from Causal LM:**
-- ❌ No next-token prediction
-- ✅ Contrastive learning (positive/negative pairs)
-- ✅ Mean pooling for sentence embeddings
-- ✅ Temperature-scaled cosine similarity
+- No next-token prediction
+- Contrastive learning (positive/negative pairs)
+- Mean pooling for sentence embeddings
+- Temperature-scaled cosine similarity
 
 ### 3. Gradient Masking for New Tokens (Stage 1-3)
 
@@ -171,7 +171,7 @@ lora_config_stage6 = LoraConfig(
 
 ---
 
-## 📚 Dataset Selection
+## Dataset Selection
 
 ### Why HAERAE-HUB Datasets?
 
@@ -185,7 +185,7 @@ lora_config_stage6 = LoraConfig(
 | **K2-Feedback** | 6 | 150K | 인간 피드백 (score≥5) |
 
 ```
-## 📁 Project Structure
+## Project Structure
 
 ```bash
 ko-embedding-expansion/
@@ -210,12 +210,12 @@ ko-embedding-expansion/
 │   ├── stage3/final/
 │   ├── stage4/final/
 │   ├── stage5/final/
-│   └── stage6/final/                 # 🎉 Final model
+│   └── stage6/final/                 #  Final model
 └── run_stage1.sh ... run_stage6.sh   # Training scripts
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 
@@ -230,7 +230,7 @@ pip install torch transformers peft datasets accelerate
 ### Hardware Requirements
 
 ```yaml
-GPUs: 8 GPUs (A5000 24GB or equivalent)
+GPUs: 8 GPUs (24GB VRAM or equivalent)
 Total VRAM: 192GB
 Mixed Precision: BFloat16
 Disk: ~50GB (models + checkpoints + cache)
@@ -281,9 +281,9 @@ CUDA_VISIBLE_DEVICES=0 python scripts/comprehensive_evaluation.py
 
 ---
 
-## 📊 Evaluation Results
+## Evaluation Results
 
-### 🎯 MTEB Korean Retrieval Benchmark (Key Results)
+### MTEB Korean Retrieval Benchmark (Key Results)
 
 **Evaluation Date**: November 10, 2025
 
@@ -293,18 +293,18 @@ CUDA_VISIBLE_DEVICES=0 python scripts/comprehensive_evaluation.py
 
 | Task | Original | Stage 6 | Change | Relative Change |
 |------|----------|---------|--------|----------------|
-| Ko-StrategyQA | 57.66% | 64.56% | **+6.90%** | ✅ **+12.0%** |
-| MrTidyRetrieval | 27.81% | 30.21% | **+2.40%** | ✅ **+8.6%** |
-| BelebeleRetrieval | 80.47% | 83.12% | **+2.66%** | ✅ **+3.3%** |
-| MIRACLRetrieval | 34.88% | 35.81% | **+0.93%** | ✅ **+2.7%** |
-| AutoRAGRetrieval | 74.70% | 73.10% | -1.60% | ❌ -2.1% |
-| PublicHealthQA | 74.44% | 70.34% | -4.11% | ❌ -5.5% |
-| **Average** | **58.33%** | **59.52%** | **+1.20%** | ✅ **+2.1%** |
+| Ko-StrategyQA | 57.66% | 64.56% | **+6.90%** |  **+12.0%** |
+| MrTidyRetrieval | 27.81% | 30.21% | **+2.40%** |  **+8.6%** |
+| BelebeleRetrieval | 80.47% | 83.12% | **+2.66%** |  **+3.3%** |
+| MIRACLRetrieval | 34.88% | 35.81% | **+0.93%** |  **+2.7%** |
+| AutoRAGRetrieval | 74.70% | 73.10% | -1.60% |  -2.1% |
+| PublicHealthQA | 74.44% | 70.34% | -4.11% |  -5.5% |
+| **Average** | **58.33%** | **59.52%** | **+1.20%** |  **+2.1%** |
 
 #### Detailed Metrics
 
 <details>
-<summary><b>Ko-StrategyQA (✅ Best Improvement: +12.0%)</b></summary>
+<summary><b>Ko-StrategyQA ( Best Improvement: +12.0%)</b></summary>
 
 | Metric | Original | Stage 6 | Change |
 |--------|----------|---------|--------|
@@ -316,7 +316,7 @@ CUDA_VISIBLE_DEVICES=0 python scripts/comprehensive_evaluation.py
 </details>
 
 <details>
-<summary><b>MrTidyRetrieval (✅ +8.6%)</b></summary>
+<summary><b>MrTidyRetrieval ( +8.6%)</b></summary>
 
 | Metric | Original | Stage 6 | Change |
 |--------|----------|---------|--------|
@@ -328,7 +328,7 @@ CUDA_VISIBLE_DEVICES=0 python scripts/comprehensive_evaluation.py
 </details>
 
 <details>
-<summary><b>BelebeleRetrieval (✅ +3.3%)</b></summary>
+<summary><b>BelebeleRetrieval ( +3.3%)</b></summary>
 
 | Metric | Original | Stage 6 | Change |
 |--------|----------|---------|--------|
@@ -340,7 +340,7 @@ CUDA_VISIBLE_DEVICES=0 python scripts/comprehensive_evaluation.py
 </details>
 
 <details>
-<summary><b>MIRACLRetrieval (✅ +2.7%)</b></summary>
+<summary><b>MIRACLRetrieval ( +2.7%)</b></summary>
 
 | Metric | Original | Stage 6 | Change |
 |--------|----------|---------|--------|
@@ -352,7 +352,7 @@ CUDA_VISIBLE_DEVICES=0 python scripts/comprehensive_evaluation.py
 </details>
 
 <details>
-<summary><b>AutoRAGRetrieval (❌ -2.1%)</b></summary>
+<summary><b>AutoRAGRetrieval ( -2.1%)</b></summary>
 
 | Metric | Original | Stage 6 | Change |
 |--------|----------|---------|--------|
@@ -364,7 +364,7 @@ CUDA_VISIBLE_DEVICES=0 python scripts/comprehensive_evaluation.py
 </details>
 
 <details>
-<summary><b>PublicHealthQA (❌ -5.5%)</b></summary>
+<summary><b>PublicHealthQA ( -5.5%)</b></summary>
 
 | Metric | Original | Stage 6 | Change |
 |--------|----------|---------|--------|
@@ -377,18 +377,18 @@ CUDA_VISIBLE_DEVICES=0 python scripts/comprehensive_evaluation.py
 
 #### Key Findings
 
-**✅ Strengths:**
+** Strengths:**
 - 6개 태스크 중 4개에서 성능 향상 (66.7% success rate)
 - Ko-StrategyQA에서 최대 12.0% 개선 (전략적 질의응답 능력 강화)
 - MrTidyRetrieval에서 8.6% 개선 (대규모 코퍼스 검색 능력)
 - 전체 평균 NDCG@10: 절대값 +1.20%, 상대값 +2.1% 개선
 
-**⚠️ Areas for Improvement:**
+** Areas for Improvement:**
 - PublicHealthQA: -4.11% (의료 도메인 특화 쿼리에서 성능 저하)
 - AutoRAGRetrieval: -1.60% (경미한 성능 저하)
 - 도메인 특화 태스크에 대한 추가 파인튜닝 고려 필요
 
-**💡 Analysis:**
+** Analysis:**
 - 일반적인 한국어 검색 태스크에서 균형잡힌 성능 향상
 - 전략적/추론 기반 쿼리 처리 능력 크게 개선
 - 의료/전문 도메인에서는 추가 최적화 여지 존재
@@ -396,7 +396,7 @@ CUDA_VISIBLE_DEVICES=0 python scripts/comprehensive_evaluation.py
 
 ---
 
-## 🔬 Technical Details
+## Technical Details
 
 ### Token Statistics
 
@@ -410,7 +410,7 @@ Final Expanded Vocabulary: 219,698
 ### Training Statistics
 
 ```yaml
-Total Training Time: ~9-10 hours (8 GPUs, A5000 24GB)
+Total Training Time: ~9-10 hours (8 GPUs, 24GB VRAM)
 GPU Hours: 72-80 hours
 
 Trainable Parameters per Stage:
@@ -437,13 +437,13 @@ embedding_quality = {
 ```
 
 **Interpretation:**
-- ✅ 기존 토큰과 새 토큰의 norm 분포가 유사 (2.40 vs 2.39)
-- ✅ 안정적인 표준편차 (0.14-0.15)
-- ✅ 적절한 교차 유사도 (0.18) - 너무 높지도 낮지도 않음
+- 기존 토큰과 새 토큰의 norm 분포가 유사 (2.40 vs 2.39)
+- 안정적인 표준편차 (0.14-0.15)
+- 적절한 교차 유사도 (0.18) - 너무 높지도 낮지도 않음
 
 ---
 
-## 🆚 Comparison with Related Work
+## Comparison with Related Work
 
 ### vs. KORMo Approach
 
@@ -464,7 +464,7 @@ embedding_quality = {
 | **Model Type** | Causal LM (Generation) | Embedding Model |
 | **Loss Function** | Causal LM | Contrastive (SimCSE) |
 | **Training Stages** | 7 stages | 6 stages |
-| **Token Initialization** | Subword averaging | Subword averaging ✓ |
+| **Token Initialization** | Subword averaging | Subword averaging  |
 | **Output Embedding** | lm_head initialization | N/A (no lm_head) |
 
 ### vs. Thunder-LLM
@@ -475,10 +475,10 @@ embedding_quality = {
 | **Model Type** | Causal LM (Generation) | Embedding Model |
 | **Loss Function** | Causal LM | Contrastive (SimCSE) |
 | **Training Method** | Full continual pre-training | Embeddings + LoRA |
-| **LoRA Usage** | ❌ Not used | ✅ Stage 5-6 |
+| **LoRA Usage** |  Not used |  Stage 5-6 |
 | **Training Precision** | FP8 | BF16 |
 | **Training Scale** | 100B tokens | ~259M tokens |
-| **Token Initialization** | Subword averaging | Subword averaging ✓ |
+| **Token Initialization** | Subword averaging | Subword averaging  |
 
 ### Key Differences
 
@@ -489,7 +489,7 @@ embedding_quality = {
 
 ---
 
-## 🎯 Conclusions
+## Conclusions
 
 ### Key Achievements
 
@@ -498,14 +498,13 @@ embedding_quality = {
    - 안정적인 embedding 품질 유지
 
 2. **Significant Performance Improvement**
-   - 구분도 24.59% 향상
-   - 다른 문장 구분 능력 51.20% 향상
-   - 모든 카테고리에서 일관된 개선
+   - 6개 태스크 중 4개 향상, 2개 하락(AutoRAGRetrieval -1.60%p, PublicHealthQA -4.11%p) — 평균 NDCG@10 +1.20%p
+   - 향상폭이 큰 쪽은 Ko-StrategyQA(+6.90%p)로, 어휘 확장 효과가 태스크마다 다르게 나타남
 
 3. **Efficient Training**
    - 6단계 progressive training으로 안정성 확보
    - LoRA로 parameter-efficient fine-tuning
-   - 총 72시간 (6 GPUs) 학습 완료
+   - 총 약 72-80시간 (8 GPUs) 학습 완료
 
 4. **Methodology Innovation**
    - 차집합 기반 토큰 선택
@@ -532,7 +531,7 @@ embedding_quality = {
 
 ---
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - [**EEVE Team**](https://huggingface.co/yanolja/EEVE-Korean-Instruct-10.8B-v1.0) - EEVE 방법론
 - [**Thunder-LLM Team**](https://arxiv.org/abs/2506.21595) - Thunder-LLM Korean adaptation methodology
@@ -543,7 +542,7 @@ embedding_quality = {
 
 ---
 
-## 📝 Citation
+## Citation
 
 ```bibtex
 @misc{korean-embedding-expansion-2024,
@@ -557,15 +556,15 @@ embedding_quality = {
 
 ---
 
-## 📄 License
+## License
 
 MIT License
 
 ---
 
-## 📧 Contact
+## Contact
 
 For questions or collaboration:
-- GitHub: [https://github.com/gihong0303/Test-Ko-Embedding](https://github.com/gihong0303/Test-Ko-Embedding)
+- GitHub: [https://github.com/gihong0303/KoQwen-Embedding](https://github.com/gihong0303/KoQwen-Embedding)
 
 ---

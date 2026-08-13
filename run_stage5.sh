@@ -3,7 +3,7 @@
 
 set -euo pipefail
 
-export CUDA_VISIBLE_DEVICES=2,3,4,5,6,7,8,9
+export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
 export TOKENIZERS_PARALLELISM=false
 export NCCL_IB_DISABLE=1
 export NCCL_P2P_DISABLE=1

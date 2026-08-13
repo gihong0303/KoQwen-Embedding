@@ -121,7 +121,7 @@ class BaseEmbeddingTrainer:
 
         # Load model
         if self.model_path:
-            self.log(f"\n🔧 Loading from: {self.model_path}")
+            self.log(f"\nLoading from: {self.model_path}")
             self.tokenizer = AutoTokenizer.from_pretrained(
                 self.model_path,
                 trust_remote_code=True,
@@ -135,7 +135,7 @@ class BaseEmbeddingTrainer:
             )
         else:
             # Stage 1: load base + resize
-            self.log(f"\n🔧 Loading base: {self.project_config['base_model']}")
+            self.log(f"\nLoading base: {self.project_config['base_model']}")
             tokenizer_path = PROJECT_ROOT / self.project_config['tokenizer_path']
             self.tokenizer = AutoTokenizer.from_pretrained(
                 str(tokenizer_path),
@@ -155,7 +155,7 @@ class BaseEmbeddingTrainer:
             self.model.resize_token_embeddings(new_size)
 
         vocab_size = len(self.tokenizer)
-        self.log(f"\n📚 Vocabulary: {vocab_size:,}")
+        self.log(f"\nVocabulary: {vocab_size:,}")
 
         if dist.is_initialized():
             dist.barrier()
@@ -201,14 +201,14 @@ class BaseEmbeddingTrainer:
                     return masked_grad
 
                 embed_tokens.weight.register_hook(gradient_mask_hook)
-                self.log(f"\n⚠️  Training embed_tokens (new tokens only: {vocab_size - old_vocab:,})")
+                self.log(f"\nTraining embed_tokens (new tokens only: {vocab_size - old_vocab:,})")
             else:
-                self.log(f"\n⚠️  Training embed_tokens (ALL tokens: {vocab_size:,})")
+                self.log(f"\nTraining embed_tokens (ALL tokens: {vocab_size:,})")
 
         trainable = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
         total = sum(p.numel() for p in self.model.parameters())
 
-        self.log(f"\n📊 Parameters:")
+        self.log(f"\nParameters:")
         self.log(f"  Total: {total:,}")
         self.log(f"  Trainable: {trainable:,}")
         self.log(f"  Percentage: {100 * trainable / total:.2f}%")
@@ -241,11 +241,11 @@ class BaseEmbeddingTrainer:
         if dataset_cfg.get('local', False):
             # Log message depends on dataset type
             if dataset_cfg.get('mixed'):
-                self.log(f"\n🗂️  Loading mixed local datasets:")
+                self.log(f"\nLoading mixed local datasets:")
                 for ds in dataset_cfg['mixed']:
                     self.log(f"     • {ds['name']}: {ds.get('max_samples', 'all'):,} samples")
             else:
-                self.log(f"\n🗂️  Loading local dataset: {dataset_cfg['name']}")
+                self.log(f"\nLoading local dataset: {dataset_cfg['name']}")
 
             loader = LocalDatasetLoader(base_path=dataset_cfg.get('local_path', '~/haerae_dataset'))
 
@@ -272,7 +272,7 @@ class BaseEmbeddingTrainer:
                 )
         else:
             # Use HuggingFace Hub
-            self.log(f"\n🤗 Loading HuggingFace dataset: {dataset_cfg['name']}")
+            self.log(f"\nLoading HuggingFace dataset: {dataset_cfg['name']}")
             dataset = load_dataset(
                 dataset_cfg['name'],
                 split='train',
@@ -416,11 +416,11 @@ class BaseEmbeddingTrainer:
         with open(ckpt_dir / "metadata.json", 'w') as f:
             json.dump({'epoch': epoch, 'step': step, 'loss': loss}, f, indent=2)
 
-        self.log(f"💾 Checkpoint: {ckpt_dir}")
+        self.log(f"Checkpoint: {ckpt_dir}")
 
     def train(self):
         self.log("\n" + "=" * 80)
-        self.log("🚀 Training Start")
+        self.log("Training Start")
         self.log("=" * 80)
 
         num_epochs = self.stage_config['training']['num_epochs']
@@ -437,7 +437,7 @@ class BaseEmbeddingTrainer:
             if is_main_process() and not self.stage_config.get('use_lora'):
                 model_unwrapped = self.model.module if isinstance(self.model, DDP) else self.model
                 stats = compute_embedding_stats(model_unwrapped, self.tokenizer, self.device)
-                self.log(f"\n📊 Embedding Stats:")
+                self.log(f"\nEmbedding Stats:")
                 self.log(f"  Old: {stats['old_tokens_mean_norm']:.4f} ± {stats['old_tokens_std_norm']:.4f}")
                 self.log(f"  New: {stats['new_tokens_mean_norm']:.4f} ± {stats['new_tokens_std_norm']:.4f}")
 
@@ -455,6 +455,6 @@ class BaseEmbeddingTrainer:
             self.tokenizer.save_pretrained(final_dir)
 
             self.log("\n" + "=" * 80)
-            self.log(f"✅ {self.stage_config['name']} 완료!")
+            self.log(f"[OK] {self.stage_config['name']} 완료!")
             self.log(f"   Output: {final_dir}")
             self.log("=" * 80)
